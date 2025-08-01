@@ -8,7 +8,7 @@ REPOS=(
 
 BRANCHES=(
   "feature/CD-85-create-docker-composite-that-inclu"
-  "feature/CD-83-creating-docker-file-for-enhanceme"
+  "development"
 )
 
 TARGET="./"
@@ -37,3 +37,11 @@ for i in "${!REPOS[@]}"; do
 done
 
 echo "✅ All services cloned/updated."
+
+# --- Build Docker Compose Services ---
+echo "🐳 Building Docker Compose services..."
+
+sudo docker compose build --ssh default=${SSH_AUTH_SOCK}
+
+echo "✅ Docker Compose build completed."
+
