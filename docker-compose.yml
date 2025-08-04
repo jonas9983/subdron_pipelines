@@ -7,7 +7,7 @@ services:
     container_name: image-processing-container
     working_dir: /image-processing
     volumes:
-      - ./data:/image-processing/data # Mount a shared data volume
+      - ./data:/image-processing/images
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=all
@@ -21,23 +21,24 @@ services:
 
   colmap:
     build:
-      context: ./colmap
+      context: .
       dockerfile: docker/Dockerfile
       args:
-        UBUNTU_VERSION: "24.04"
-        NVIDIA_CUDA_VERSION: "12.8.0"
+        UBUNTU_VERSION: "24.04" # Default value, can be overridden
+        NVIDIA_CUDA_VERSION: "12.8.0" # Default value, can be overridden
     image: colmap
     depends_on:
       - image-processing # colmap will not start until image-processing is running
     volumes:
-      - ./data:/colmap/data # Mount the same shared data volume
+      - "./projects:/colmap/projects"
+    runtime: nvidia
     deploy:
       resources:
         reservations:
           devices:
             - driver: nvidia
-              count: all
+              count: all # or specify a number, e.g., 1
               capabilities: [gpu, utility, compute]
 
 volumes:
-  data: {}
+  data:
