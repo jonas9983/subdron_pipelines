@@ -50,5 +50,6 @@ Thumbs.db
 
 # subdron
 
+.env
 colmap
 image-processing

@@ -8,7 +8,7 @@ REPOS=(
 
 BRANCHES=(
   "feature/CD-85-create-docker-composite-that-inclu"
-  "development"
+  "feature/CD-85-create-docker-composite-that-inclu"
 )
 
 TARGET="./"

@@ -3,14 +3,35 @@ services:
     build:
       context: ./image-processing
       dockerfile: Dockerfile
-    image: image-processing:latest
-    container_name: image-processing-container
-    working_dir: /image-processing
+    image: image-processing 
+    runtime: nvidia
+    env_file:
+      - .env
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu, utility, compute]
     volumes:
       - ./data:/image-processing/images
-    environment:
-      - NVIDIA_VISIBLE_DEVICES=all
-      - NVIDIA_DRIVER_CAPABILITIES=all
+
+  colmap:
+    build:
+      context: ./colmap
+      dockerfile: docker/Dockerfile
+      args:
+        UBUNTU_VERSION: "24.04"
+        NVIDIA_CUDA_VERSION: "12.8.0"
+    image: colmap
+    depends_on:
+      - image-processing
+    volumes:
+      - "./data:/colmap/projects"
+    runtime: nvidia
+    env_file:
+      - .env
     deploy:
       resources:
         reservations:
@@ -19,26 +40,5 @@ services:
               count: all
               capabilities: [gpu, utility, compute]
 
-  colmap:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile
-      args:
-        UBUNTU_VERSION: "24.04" # Default value, can be overridden
-        NVIDIA_CUDA_VERSION: "12.8.0" # Default value, can be overridden
-    image: colmap
-    depends_on:
-      - image-processing # colmap will not start until image-processing is running
-    volumes:
-      - "./projects:/colmap/projects"
-    runtime: nvidia
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all # or specify a number, e.g., 1
-              capabilities: [gpu, utility, compute]
-
 volumes:
-  data:
+  shared_data:
