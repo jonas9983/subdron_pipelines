@@ -23,7 +23,7 @@ There are two configuration files on the [configs](./configs/) directory that yo
 Run the following command to run the pipeline with data coming from the simulation
 
 ```bash
-./run_pipeline.sh
+sudo ./run_pipeline.sh --config ./configs/simulated_data.json
 ```
 
 __Note__: Your personal user password may be required since `sudo` is run inside the shell script
