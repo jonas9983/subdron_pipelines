@@ -53,3 +53,7 @@ Thumbs.db
 .env
 colmap
 image-processing
+*.png
+*.jpg
+holoocean
+sparus
