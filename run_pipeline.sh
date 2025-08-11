@@ -29,11 +29,11 @@ fi
 # Read parameters from the JSON file using jq
 SOURCE=$(jq -r '.source' "$CONFIG_FILE")
 IMAGE_PREFIX=$(jq -r '.image_prefix' "$CONFIG_FILE")
-POSES_PREFIX=$(jq -r '.poses_prefix' "$CONFIG_FILE")
+DATA_PREFIX=$(jq -r '.data_prefix' "$CONFIG_FILE")
 METHOD=$(jq -r '.method' "$CONFIG_FILE")
 
 # --- Dynamic Path Generation ---
-# Assuming image-processing saves to a directory named after the method.
+# Since image-processing saves to a directory named after the method.
 # This path is relative to the shared volume mount point inside the container.
 IMAGE_DIR="/colmap/projects/$METHOD"
 
@@ -44,6 +44,6 @@ docker compose run --rm image-processing --to_memory --prefix "$IMAGE_PREFIX" "$
 
 echo "Image processing completed. Starting COLMAP service..."
 # Run the colmap service, passing the dynamic path as an environment variable.
-docker compose run --rm -e COLMAP_SOURCE_PATH="$IMAGE_DIR" -e POSES_PREFIX="$POSES_PREFIX" colmap --source "$SOURCE"
+docker compose run --rm -e COLMAP_SOURCE_PATH="$IMAGE_DIR" -e DATA_PREFIX="$DATA_PREFIX" colmap --source "$SOURCE"
 
 echo "COLMAP workflow completed."
