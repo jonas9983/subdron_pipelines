@@ -1,29 +1,29 @@
-# README #
+# Underwater Vision Pipeline #
 
-This README would normally document whatever steps are necessary to get your application up and running.
+This repository is hosting the Underwater Vision Pipeline, which at the time of this writing consists of the combination of image-processing methods and colmap. The idea is to first process the images with a specified method and then running colmao to retrieve a 3D sparse reconstruction of the scene that was inspected.
 
-### What is this repository for? ###
+## Installation
 
-* Quick summary
-* Version
-* [Learn Markdown](https://bitbucket.org/tutorials/markdowndemo)
+We use docker compose for this project. Make sure you follow their [installation guidelines](https://docs.docker.com/compose/install/).
 
-### How do I get set up? ###
+After installing docker compose, run the following command
 
-* Summary of set up
-* Configuration
-* Dependencies
-* Database configuration
-* How to run tests
-* Deployment instructions
+```bash
+./clone_and_build.sh
+```
 
-### Contribution guidelines ###
+This shell script will clone the repositories and build them with docker compose. It may take some time to install all the dependencies.
 
-* Writing tests
-* Code review
-* Other guidelines
+After the docker images are built, you can start using the pipeline.
 
-### Who do I talk to? ###
+## Usage
 
-* Repo owner or admin
-* Other community or team contact
+There are two configuration files on the [configs](./configs/) directory that you can use to test the pipeline.
+
+Run the following command to run the pipeline with data coming from the simulation
+
+```bash
+sudo ./run_pipeline.sh --config ./configs/simulated_data.json
+```
+
+__Note__: Your personal user password may be required since `sudo` is run inside the shell script

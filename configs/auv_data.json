@@ -1,0 +1,6 @@
+{
+  "source": "sparus",
+  "image_prefix": "simulated_data/containerships/boat_2/images",
+  "poses_prefix": "simulated_data/containerships/boat_2/full_poses.npy",
+  "method": "CLAHE"
+}
