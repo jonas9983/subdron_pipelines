@@ -27,7 +27,7 @@ def process_bag_file_dev(event, context):
     tag_to_test = os.getenv('TARGET_IMAGE_TAG', 'dev')
     
     create_batch_job(
-        file_path=file_name,
+        file_path=f"{bucket_name}/{file_name}",
         cpu=cpu,
         memory=memory,
         tag=tag_to_test
@@ -46,7 +46,7 @@ def create_batch_job(file_path, cpu, memory, tag):
     runnable.container.entrypoint = "/bin/bash"
     runnable.container.commands = [
         "-c",
-        "source /opt/ros/noetic/setup.bash && source /catkin_ws/devel/setup.bash && python main.py -i ${INPUT_BAG_PATH} --extract-images --post-process --upload-results"
+        "source /opt/ros/noetic/setup.bash && source /catkin_ws/devel/setup.bash && python main.py -i ${INPUT_BAG_PATH} --extract-images --post-process --upload-results --create-video --video-fps 30"
     ]
     
     runnable.environment = batch_v1.Environment()
