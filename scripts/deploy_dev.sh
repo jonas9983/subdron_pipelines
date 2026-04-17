@@ -4,7 +4,7 @@ set -e
 # --- Configuration ---
 FUNCTION_NAME="process_bag_file_dev"
 REGION="europe-west1"
-BUCKET_NAME="subdron" # Change if your test bucket is different
+BUCKET_NAME="subdron"
 ENTRY_POINT="process_bag_file_dev"
 
 # --- 1. Get Tag from Argument ---

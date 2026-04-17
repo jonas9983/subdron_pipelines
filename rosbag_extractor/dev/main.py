@@ -50,8 +50,15 @@ def create_batch_job(file_path, cpu, memory, tag):
     ]
     
     runnable.environment = batch_v1.Environment()
+    
+    # 1. Standard Environment Variables
     runnable.environment.variables = {
         "INPUT_BAG_PATH": file_path,
+    }
+    
+    # Secret Environment Variables
+    runnable.environment.secret_variables = {
+        "DATABASE_URL": "projects/eighth-saga-468413-c9/secrets/DB_URL/versions/latest"
     }
     
     job.task_groups[0].task_spec = batch_v1.TaskSpec()
@@ -72,11 +79,12 @@ def create_batch_job(file_path, cpu, memory, tag):
     job.logs_policy = batch_v1.LogsPolicy()
     job.logs_policy.destination = batch_v1.LogsPolicy.Destination.CLOUD_LOGGING
     
-    # Clearly label the job as a test job
+    # Label the job as a test job
+    safe_tag = tag.replace('.', '-').lower()
     request = batch_v1.CreateJobRequest(
         parent="projects/eighth-saga-468413-c9/locations/europe-west1",
         job=job,
-        job_id=f"test-bag-{tag}-{os.urandom(2).hex()}"
+        job_id=f"test-bag-{safe_tag}-{os.urandom(2).hex()}"
     )
     
     client.create_job(request)
