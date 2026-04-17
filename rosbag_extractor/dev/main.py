@@ -41,7 +41,7 @@ def create_batch_job(file_path, cpu, memory, tag):
     runnable = batch_v1.Runnable()
     runnable.container = batch_v1.Runnable.Container()
     
-    runnable.container.image_uri = f"europe-west1-docker.pkg.dev/eighth-saga-468413-c9/rosbag-extractor/rosbag-extractor:{tag}"
+    runnable.container.image_uri = f"europe-west1-docker.pkg.dev/eighth-saga-468413-c9/subdron-rosbag-extractor/subdron-rosbag-extractor:{tag}"
     
     runnable.container.entrypoint = "/bin/bash"
     runnable.container.commands = [
