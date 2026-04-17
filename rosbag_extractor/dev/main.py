@@ -66,7 +66,7 @@ def create_batch_job(file_path, cpu, memory, tag):
     job.task_groups[0].task_spec.compute_resource = batch_v1.ComputeResource()
     job.task_groups[0].task_spec.compute_resource.cpu_milli = cpu
     job.task_groups[0].task_spec.compute_resource.memory_mib = memory
-    job.task_groups[0].task_spec.boot_disk_mib = 51200
+    job.task_groups[0].task_spec.compute_resource.boot_disk_mib = 51200
     job.task_groups[0].task_spec.max_run_duration = "7200s"
     
     job.allocation_policy = batch_v1.AllocationPolicy()

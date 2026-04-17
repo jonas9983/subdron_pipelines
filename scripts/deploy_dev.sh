@@ -18,7 +18,6 @@ fi
 TAG=$1
 
 echo "--- Deploying Cloud Function: ${FUNCTION_NAME} ---"
-echo "--- Source Directory: ${SOURCE_DIR} ---"
 echo "--- Target Image Tag for Batch Jobs: ${TAG} ---"
 
 gcloud functions deploy ${FUNCTION_NAME} \
