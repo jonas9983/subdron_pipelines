@@ -1,6 +1,0 @@
-{
-  "source": "holoocean",
-  "image_prefix": "simulated_data/containerships/boat_2/images",
-  "data_prefix": "simulated_data/containerships/boat_2",
-  "method": "CLAHE"
-}
