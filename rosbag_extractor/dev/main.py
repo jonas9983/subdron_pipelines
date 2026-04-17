@@ -1,0 +1,83 @@
+import os
+from google.cloud import batch_v1
+from google.cloud import storage
+
+def process_bag_file_dev(event, context):
+    """Triggered by GCS - DEVELOPMENT VERSION."""
+    
+    file_name = event['name']
+    bucket_name = event['bucket']
+    
+    if not file_name.endswith('.bag'):
+        return
+    
+    if '/03_Logs/test_bags/' not in file_name:
+        return
+    
+    storage_client = storage.Client()
+    bucket = storage_client.bucket(bucket_name)
+    blob = bucket.blob(file_name)
+    blob.reload()
+    file_size_gb = blob.size / (1024**3)
+    
+    cpu = 4000 if file_size_gb < 5 else 8000
+    memory = 16384 if file_size_gb < 5 else 32768
+    
+    # Read the tag we want to test from the Cloud Function's own Environment Variables
+    tag_to_test = os.getenv('TARGET_IMAGE_TAG', 'dev')
+    
+    create_batch_job(
+        file_path=file_name,
+        cpu=cpu,
+        memory=memory,
+        tag=tag_to_test
+    )
+
+def create_batch_job(file_path, cpu, memory, tag):
+    client = batch_v1.BatchServiceClient()
+    job = batch_v1.Job()
+    job.task_groups = [batch_v1.TaskGroup()]
+    
+    runnable = batch_v1.Runnable()
+    runnable.container = batch_v1.Runnable.Container()
+    
+    runnable.container.image_uri = f"europe-west1-docker.pkg.dev/eighth-saga-468413-c9/rosbag-extractor/rosbag-extractor:{tag}"
+    
+    runnable.container.entrypoint = "/bin/bash"
+    runnable.container.commands = [
+        "-c",
+        "source /opt/ros/noetic/setup.bash && source /catkin_ws/devel/setup.bash && python main.py -i ${INPUT_BAG_PATH} --extract-images --post-process --upload-results"
+    ]
+    
+    runnable.environment = batch_v1.Environment()
+    runnable.environment.variables = {
+        "INPUT_BAG_PATH": file_path,
+    }
+    
+    job.task_groups[0].task_spec = batch_v1.TaskSpec()
+    job.task_groups[0].task_spec.runnables = [runnable]
+    job.task_groups[0].task_spec.compute_resource = batch_v1.ComputeResource()
+    job.task_groups[0].task_spec.compute_resource.cpu_milli = cpu
+    job.task_groups[0].task_spec.compute_resource.memory_mib = memory
+    job.task_groups[0].task_spec.boot_disk_mib = 51200
+    job.task_groups[0].task_spec.max_run_duration = "7200s"
+    
+    job.allocation_policy = batch_v1.AllocationPolicy()
+    instance_policy = batch_v1.AllocationPolicy.InstancePolicy()
+    instance_policy.machine_type = "n2-standard-8" if cpu > 4000 else "n2-standard-4"
+    job.allocation_policy.instances = [
+        batch_v1.AllocationPolicy.InstancePolicyOrTemplate(policy=instance_policy)
+    ]
+    
+    job.logs_policy = batch_v1.LogsPolicy()
+    job.logs_policy.destination = batch_v1.LogsPolicy.Destination.CLOUD_LOGGING
+    
+    # Clearly label the job as a test job
+    request = batch_v1.CreateJobRequest(
+        parent="projects/eighth-saga-468413-c9/locations/europe-west1",
+        job=job,
+        job_id=f"test-bag-{tag}-{os.urandom(2).hex()}"
+    )
+    
+    client.create_job(request)
+    print(f"Successfully triggered Batch Job with tag: {tag}")
