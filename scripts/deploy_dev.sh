@@ -2,15 +2,20 @@
 set -e
 
 # --- Configuration Defaults ---
-TAG=""
+BAG_TAG=""
+IMG_TAG=""
 SKIP_BAG=false
 SKIP_IMG=false
 
 # --- Parse Arguments ---
 while [[ "$#" -gt 0 ]]; do
     case $1 in
-        --tag)
-            TAG="$2"
+        --bag-tag)
+            BAG_TAG="$2"
+            shift 2
+            ;;
+        --img-tag)
+            IMG_TAG="$2"
             shift 2
             ;;
         --skip)
@@ -21,23 +26,21 @@ while [[ "$#" -gt 0 ]]; do
             ;;
         *)
             echo "Unknown parameter: $1"
-            echo "Usage: ./deploy_dev.sh --tag <tag> [--skip bag|img|bag,img]"
+            echo "Usage: ./deploy_dev.sh [--bag-tag <tag>] [--img-tag <tag>] [--skip bag|img|bag,img]"
             exit 1
             ;;
     esac
 done
 
-if [ -z "$TAG" ]; then
-    echo "ERROR: You must provide a target image tag."
-    echo "Example: ./deploy_dev.sh --tag v2.0-test"
-    exit 1
-fi
-
-echo " Starting DEV Pipeline Deployment (Target Tag: $TAG)"
+echo " Starting DEV Pipeline Deployment"
 
 # DEPLOY BAG EXTRACTOR
 if [ "$SKIP_BAG" = false ]; then
-    echo "--> Deploying: Bag Extractor (process_bag_file_dev)"
+    if [ -z "$BAG_TAG" ]; then
+        echo "ERROR: You must provide a --bag-tag or use --skip bag"
+        exit 1
+    fi
+    echo "--> Deploying: Bag Extractor (process_bag_file_dev) with tag: $BAG_TAG"
     gcloud functions deploy process_bag_file_dev \
       --runtime python311 \
       --trigger-bucket subdron \
@@ -45,14 +48,18 @@ if [ "$SKIP_BAG" = false ]; then
       --region europe-west1 \
       --source ./rosbag_extractor/dev \
       --no-gen2 \
-      --set-env-vars TARGET_IMAGE_TAG=${TAG}
+      --set-env-vars TARGET_IMAGE_TAG=${BAG_TAG}
 else
     echo "--> SKIPPING: Bag Extractor"
 fi
 
 # Deploy Image Processing
 if [ "$SKIP_IMG" = false ]; then
-    echo " Deploying: Image Processing Service (process_images_dev)"
+    if [ -z "$IMG_TAG" ]; then
+        echo "ERROR: You must provide an --img-tag or use --skip img"
+        exit 1
+    fi
+    echo "--> Deploying: Image Processing Service (process_images_dev) with tag: $IMG_TAG"
     gcloud functions deploy process_images_dev \
       --runtime python311 \
       --trigger-bucket subdron \
@@ -60,9 +67,9 @@ if [ "$SKIP_IMG" = false ]; then
       --region europe-west1 \
       --source ./image_processing/dev \
       --no-gen2 \
-      --set-env-vars TARGET_IMAGE_TAG=${TAG}
+      --set-env-vars TARGET_IMAGE_TAG=${IMG_TAG}
 else
-    echo "SKIPPING: Image Processing"
+    echo "--> SKIPPING: Image Processing"
 fi
 
 echo " All deployments finished!"
