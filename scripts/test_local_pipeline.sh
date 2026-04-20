@@ -56,11 +56,15 @@ fi
 
 echo "Running local test for step: $STEP using tag: $TAG"
 
+# Fetch the DATABASE_URL from Secret Manager to mimic Cloud Batch secret injection
+echo "Fetching DATABASE_URL from Secret Manager..."
+DB_URL=$(gcloud secrets versions access latest --secret="DB_URL" --project="eighth-saga-468413-c9")
+
 case $STEP in
     bag)
         if [ -z "$BAG_PATH" ]; then echo "Error: --bag-path required for bag step"; exit 1; fi
         
-        CMD="source /opt/ros/noetic/setup.bash && source /catkin_ws/devel/setup.bash && python main.py -i $BAG_PATH --extract-images --post-process --upload-results --create-video --video-fps 30"
+        CMD="source /opt/ros/noetic/setup.bash && source /catkin_ws/devel/setup.bash && python -u main.py -i $BAG_PATH --extract-images --post-process --upload-results --create-video --video-fps 30"
         
         echo "Executing command inside container: $CMD"
         
@@ -68,6 +72,7 @@ case $STEP in
           --entrypoint /bin/bash \
           -v ~/.config/gcloud:/root/.config/gcloud \
           --env-file ../subdron_camera_transformation/.env.dev \
+          -e DATABASE_URL="$DB_URL" \
           -e GOOGLE_APPLICATION_CREDENTIALS=/root/.config/gcloud/application_default_credentials.json \
           "$FULL_IMAGE_NAME" \
           -c "$CMD"
@@ -80,10 +85,11 @@ case $STEP in
           --entrypoint /bin/bash \
           -v ~/.config/gcloud:/root/.config/gcloud \
           --env-file ../subdron_image_processing/.env.dev \
+          -e DATABASE_URL="$DB_URL" \
           -e GOOGLE_APPLICATION_CREDENTIALS=/root/.config/gcloud/application_default_credentials.json \
           -e ENV=dev -e PIPELINE_ENV=dev \
           "$FULL_IMAGE_NAME" \
-          -c "python main.py PHASEFORMER --download ${IMAGE_DIR} --upload ${OUTPUT_DIR} --batch_size 8 --upload_every 512 --resume"
+          -c "python -u main.py PHASEFORMER --download ${IMAGE_DIR} --upload ${OUTPUT_DIR} --batch_size 8 --upload_every 512 --resume"
         ;;
     colmap)
         if [ -z "$COLMAP_IMAGES_PREFIX" ] || [ -z "$COLMAP_POSES_PREFIX" ]; then 
@@ -93,10 +99,11 @@ case $STEP in
           --entrypoint /bin/bash \
           -v ~/.config/gcloud:/root/.config/gcloud \
           --env-file ../subdron_colmap/.env.dev \
+          -e DATABASE_URL="$DB_URL" \
           -e GOOGLE_APPLICATION_CREDENTIALS=/root/.config/gcloud/application_default_credentials.json \
           -e ENV=dev \
           "$FULL_IMAGE_NAME" \
-          -c "python main.py --images-prefix ${COLMAP_IMAGES_PREFIX} --poses-prefix ${COLMAP_POSES_PREFIX} --dir-version PHASEFORMER_spatial --matching-strategy spatial --spatial-radius 5.0 --plane-mode single --feature-extractor sift --upload-results"
+          -c "python -u main.py --images-prefix ${COLMAP_IMAGES_PREFIX} --poses-prefix ${COLMAP_POSES_PREFIX} --dir-version PHASEFORMER_spatial --matching-strategy spatial --spatial-radius 5.0 --plane-mode single --feature-extractor sift --upload-results"
         ;;
     *)
         echo "Invalid step: $STEP"
