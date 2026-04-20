@@ -10,7 +10,16 @@ REPO_SCRIPTS=(
     ["subdron_colmap"]="../subdron_colmap/shell_scripts/push_to_registry.sh"
 )
 
+# Map steps to repository folder names
+declare -A STEP_MAP
+STEP_MAP=(
+    ["bag"]="subdron_camera_transformation"
+    ["image"]="subdron_image_processing"
+    ["colmap"]="subdron_colmap"
+)
+
 TAG=""
+STEP=""
 
 # --- Parse Arguments ---
 while [[ "$#" -gt 0 ]]; do
@@ -19,9 +28,13 @@ while [[ "$#" -gt 0 ]]; do
             TAG="$2"
             shift 2
             ;;
+        --step)
+            STEP="$2"
+            shift 2
+            ;;
         *)
             echo "Unknown parameter: $1"
-            echo "Usage: ./build_and_push.sh --tag <tag_name>"
+            echo "Usage: ./build_and_push.sh [--step bag|image|colmap] --tag <tag_name>"
             exit 1
             ;;
     esac
@@ -32,10 +45,22 @@ if [ -z "$TAG" ]; then
     if [ -z "$TAG" ]; then echo "Error: Tag is required."; exit 1; fi
 fi
 
-echo "Starting centralized Build and Push process for tag: $TAG"
+if [ -n "$STEP" ]; then
+    TARGET_REPO="${STEP_MAP[$STEP]}"
+    if [ -z "$TARGET_REPO" ]; then
+        echo "Error: Invalid step '$STEP'. Must be bag, image, or colmap."
+        exit 1
+    fi
+    REPOS_TO_RUN=("$TARGET_REPO")
+    echo "Starting Build and Push process for step: $STEP (tag: $TAG)"
+else
+    REPOS_TO_RUN=("${!REPO_SCRIPTS[@]}")
+    echo "Starting centralized Build and Push process for ALL steps (tag: $TAG)"
+fi
 
-for REPO in "${!REPO_SCRIPTS[@]}"; do
+for REPO in "${REPOS_TO_RUN[@]}"; do
     SCRIPT_PATH="${REPO_SCRIPTS[$REPO]}"
+
     
     echo "--------------------------------------------------------"
     echo "Processing Repository: $REPO"

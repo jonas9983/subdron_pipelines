@@ -31,8 +31,8 @@ while [[ "$#" -gt 0 ]]; do
     case $1 in
         --step) STEP="$2"; shift 2 ;;
         --tag) TAG="$2"; shift 2 ;;
-        --bag-path) BAG_PATH="$2"; shift 2 ;;
-        --image-dir) IMAGE_DIR="$2"; shift 2 ;;
+        -i|--input|--bag-path) BAG_PATH="$2"; shift 2 ;;
+        -d|--image-dir) IMAGE_DIR="$2"; shift 2 ;;
         --colmap-images-prefix) COLMAP_IMAGES_PREFIX="$2"; shift 2 ;;
         --colmap-poses-prefix) COLMAP_POSES_PREFIX="$2"; shift 2 ;;
         --build) BUILD_FIRST=true; shift 1 ;;
@@ -59,36 +59,44 @@ echo "Running local test for step: $STEP using tag: $TAG"
 case $STEP in
     bag)
         if [ -z "$BAG_PATH" ]; then echo "Error: --bag-path required for bag step"; exit 1; fi
+        
+        CMD="source /opt/ros/noetic/setup.bash && source /catkin_ws/devel/setup.bash && python main.py -i $BAG_PATH --extract-images --post-process --upload-results --create-video --video-fps 30"
+        
+        echo "Executing command inside container: $CMD"
+        
         docker run --rm \
+          --entrypoint /bin/bash \
           -v ~/.config/gcloud:/root/.config/gcloud \
           --env-file ../subdron_camera_transformation/.env.dev \
           -e GOOGLE_APPLICATION_CREDENTIALS=/root/.config/gcloud/application_default_credentials.json \
           "$FULL_IMAGE_NAME" \
-          /bin/bash -c "source /opt/ros/noetic/setup.bash && source /catkin_ws/devel/setup.bash && python main.py -i ${BAG_PATH} --extract-images --post-process --upload-results --create-video --video-fps 30"
+          -c "$CMD"
         ;;
     image)
         if [ -z "$IMAGE_DIR" ]; then echo "Error: --image-dir required for image step"; exit 1; fi
         OUTPUT_DIR="${IMAGE_DIR/\/image_pose_pairs/\/enhanced\/PHASEFORMER}"
         
         docker run --rm --gpus all \
+          --entrypoint /bin/bash \
           -v ~/.config/gcloud:/root/.config/gcloud \
           --env-file ../subdron_image_processing/.env.dev \
           -e GOOGLE_APPLICATION_CREDENTIALS=/root/.config/gcloud/application_default_credentials.json \
           -e ENV=dev -e PIPELINE_ENV=dev \
           "$FULL_IMAGE_NAME" \
-          /bin/bash -c "python main.py PHASEFORMER --download ${IMAGE_DIR} --upload ${OUTPUT_DIR} --batch_size 8 --upload_every 512 --resume"
+          -c "python main.py PHASEFORMER --download ${IMAGE_DIR} --upload ${OUTPUT_DIR} --batch_size 8 --upload_every 512 --resume"
         ;;
     colmap)
         if [ -z "$COLMAP_IMAGES_PREFIX" ] || [ -z "$COLMAP_POSES_PREFIX" ]; then 
             echo "Error: --colmap-images-prefix and --colmap-poses-prefix required for colmap step"; exit 1
         fi
         docker run --rm --gpus all \
+          --entrypoint /bin/bash \
           -v ~/.config/gcloud:/root/.config/gcloud \
           --env-file ../subdron_colmap/.env.dev \
           -e GOOGLE_APPLICATION_CREDENTIALS=/root/.config/gcloud/application_default_credentials.json \
           -e ENV=dev \
           "$FULL_IMAGE_NAME" \
-          /bin/bash -c "python main.py --images-prefix ${COLMAP_IMAGES_PREFIX} --poses-prefix ${COLMAP_POSES_PREFIX} --dir-version PHASEFORMER_spatial --matching-strategy spatial --spatial-radius 5.0 --plane-mode single --feature-extractor sift --upload-results"
+          -c "python main.py --images-prefix ${COLMAP_IMAGES_PREFIX} --poses-prefix ${COLMAP_POSES_PREFIX} --dir-version PHASEFORMER_spatial --matching-strategy spatial --spatial-radius 5.0 --plane-mode single --feature-extractor sift --upload-results"
         ;;
     *)
         echo "Invalid step: $STEP"
