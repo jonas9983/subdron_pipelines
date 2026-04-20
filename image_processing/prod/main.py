@@ -55,7 +55,7 @@ def create_image_processing_job(image_dir, method, mission_id, timestamp, tag):
     runnable.container = batch_v1.Runnable.Container()
     
     # Use the dynamic tag passed from the Cloud Function
-    runnable.container.image_uri = f"europe-west1-docker.pkg.dev/eighth-saga-468413-c9/subdron-image-processing/subron-image-processing:{tag}"
+    runnable.container.image_uri = f"europe-west1-docker.pkg.dev/eighth-saga-468413-c9/subdron-image-processing/subdron-image-processing:{tag}"
     
     runnable.container.entrypoint = "/bin/bash"
     runnable.container.commands = [
