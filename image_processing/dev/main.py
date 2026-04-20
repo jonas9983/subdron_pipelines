@@ -1,6 +1,5 @@
 import os
 import json
-import os
 from google.cloud import batch_v1
 from google.cloud import storage
 
@@ -67,6 +66,7 @@ def create_image_processing_job(image_dir, method, mission_id, timestamp, tag):
     runnable.environment = batch_v1.Environment()
     runnable.environment.variables = {
         "ENV": "dev",
+        "PIPELINE_ENV": "dev",
         "MISSION_ID": mission_id,
         "TIMESTAMP": timestamp
     }

@@ -54,6 +54,7 @@ def create_batch_job(file_path, cpu, memory, tag):
     # 1. Standard Environment Variables
     runnable.environment.variables = {
         "INPUT_BAG_PATH": file_path,
+        "PIPELINE_ENV": "dev"
     }
     
     # Secret Environment Variables
