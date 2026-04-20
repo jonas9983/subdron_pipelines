@@ -5,6 +5,7 @@ set -e
 BAG_TAG=""
 IMG_TAG=""
 COLMAP_TAG=""
+TRIGGER_BUCKET=""
 SKIP_BAG=false
 SKIP_IMG=false
 SKIP_COLMAP=false
@@ -24,6 +25,10 @@ while [[ "$#" -gt 0 ]]; do
             COLMAP_TAG="$2"
             shift 2
             ;;
+        --bucket)
+            TRIGGER_BUCKET="$2"
+            shift 2
+            ;;
         --skip)
             # Check if the skip argument contains "bag", "img", or "colmap"
             if [[ "$2" == *"bag"* ]]; then SKIP_BAG=true; fi
@@ -33,7 +38,7 @@ while [[ "$#" -gt 0 ]]; do
             ;;
         *)
             echo "Unknown parameter: $1"
-            echo "Usage: ./deploy_prod.sh [--bag-tag <tag>] [--img-tag <tag>] [--colmap-tag <tag>] [--skip bag|img|colmap|...]"
+            echo "Usage: ./deploy_prod.sh [--bag-tag <tag>] [--img-tag <tag>] [--colmap-tag <tag>] [--bucket <bucket>] [--skip bag|img|colmap|...]"
             exit 1
             ;;
     esac
@@ -42,6 +47,13 @@ done
 echo " Preparing PRODUCTION Pipeline Deployment..."
 
 # --- Gather missing tags interactively ---
+if [ -z "$TRIGGER_BUCKET" ]; then
+    read -p "Enter the Trigger Bucket name [default: subdron]: " INPUT_BUCKET
+    TRIGGER_BUCKET="${INPUT_BUCKET:-subdron}"
+fi
+
+echo " Trigger Bucket: $TRIGGER_BUCKET"
+
 if [ "$SKIP_BAG" = false ] && [ -z "$BAG_TAG" ]; then
     read -p "Enter the tag for Bag Extractor (process_bag_file) [default: production]: " INPUT_BAG_TAG
     BAG_TAG="${INPUT_BAG_TAG:-production}"
@@ -64,7 +76,7 @@ if [ "$SKIP_BAG" = false ]; then
     echo "--> Deploying: Bag Extractor (process_bag_file) with tag: $BAG_TAG"
     gcloud functions deploy process_bag_file \
       --runtime python311 \
-      --trigger-bucket subdron \
+      --trigger-bucket $TRIGGER_BUCKET \
       --entry-point process_bag_file_prod \
       --region europe-west1 \
       --source ./rosbag_extractor/prod \
@@ -79,7 +91,7 @@ if [ "$SKIP_IMG" = false ]; then
     echo "--> Deploying: Image Processing Service (process_images) with tag: $IMG_TAG"
     gcloud functions deploy process_images \
       --runtime python311 \
-      --trigger-bucket subdron \
+      --trigger-bucket $TRIGGER_BUCKET \
       --entry-point process_images_prod \
       --region europe-west1 \
       --source ./image_processing/prod \
@@ -94,7 +106,7 @@ if [ "$SKIP_COLMAP" = false ]; then
     echo "--> Deploying: Colmap Service (process_colmap_prod) with tag: $COLMAP_TAG"
     gcloud functions deploy process_colmap_prod \
       --runtime python311 \
-      --trigger-bucket subdron \
+      --trigger-bucket $TRIGGER_BUCKET \
       --entry-point process_colmap_prod \
       --region europe-west1 \
       --source ./colmap_processing/prod \
