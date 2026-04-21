@@ -40,8 +40,17 @@ while [[ "$#" -gt 0 ]]; do
     esac
 done
 
+# Normalize step
+if [ "$STEP" == "img" ]; then STEP="image"; fi
+
 if [ -z "$STEP" ]; then
     echo "Usage: ./test_local_pipeline.sh --step [bag|image|colmap|full] [--build] [options]"
+    exit 1
+fi
+
+# Validate step
+if [[ ! " bag image colmap full " =~ " $STEP " ]]; then
+    echo "Error: Invalid step '$STEP'. Must be one of: bag, image (or img), colmap, full"
     exit 1
 fi
 
@@ -113,7 +122,7 @@ run_image_step() {
       -e GOOGLE_APPLICATION_CREDENTIALS=/root/.config/gcloud/application_default_credentials.json \
       -e ENV=dev -e PIPELINE_ENV=dev \
       "$image" \
-      -c "python -u main.py PHASEFORMER --download ${img_dir} --upload ${out_dir} --batch_size 8 --upload_every 512 --resume"
+      -c "python -u main.py PHASEFORMER --download ${img_dir} --upload ${out_dir} --batch_size 8 --upload_every 512 --resume --create-video"
 }
 
 case $STEP in
