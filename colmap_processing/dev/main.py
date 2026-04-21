@@ -10,16 +10,12 @@ def process_colmap_dev(event, context):
     
     if not file_name.endswith('ENHANCEMENT_COMPLETE.marker'):
         return
-    
-    if '/tests/' not in file_name:
-        print(f"Ignoring non-test marker: {file_name}")
-        return
 
     if 'data/' not in file_name or '/02_Post_Mission/camera/' not in file_name:
         return
 
     
-    print(f"Processing test completion marker: {file_name}")
+    print(f"Processing completion marker: {file_name}")
     
     storage_client = storage.Client()
     bucket = storage_client.bucket(bucket_name)

@@ -12,11 +12,7 @@ def process_images_dev(event, context):
     if not file_name.endswith('EXTRACTION_COMPLETE.marker'):
         return
     
-    if '/tests/' not in file_name:
-        print(f"Ignoring non-test marker: {file_name}")
-        return
-    
-    print(f"Processing test completion marker: {file_name}")
+    print(f"Processing completion marker: {file_name}")
     
     storage_client = storage.Client()
     bucket = storage_client.bucket(bucket_name)
