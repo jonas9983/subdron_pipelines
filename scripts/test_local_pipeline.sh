@@ -108,7 +108,7 @@ run_bag_step() {
     local tag=$2
     local image="europe-west1-docker.pkg.dev/eighth-saga-468413-c9/subdron-rosbag-extractor/subdron-rosbag-extractor:${tag}"
     
-    echo ">>> RUNNING BAG EXTRACTION: $bag"
+    echo " RUNNING BAG EXTRACTION: $bag"
     docker run --rm \
       --entrypoint /bin/bash \
       -v ~/.config/gcloud:/root/.config/gcloud \
@@ -125,7 +125,7 @@ run_image_step() {
     local image="europe-west1-docker.pkg.dev/eighth-saga-468413-c9/subdron-image-processing/subdron-image-processing:${tag}"
     local out_dir="${img_dir/\/image_pose_pairs/\/enhanced\/PHASEFORMER}"
 
-    echo ">>> RUNNING IMAGE ENHANCEMENT: $img_dir"
+    echo " RUNNING IMAGE ENHANCEMENT: $img_dir"
     docker run --rm --gpus all \
       --entrypoint /bin/bash \
       -v ~/.config/gcloud:/root/.config/gcloud \
@@ -149,7 +149,7 @@ run_colmap_step() {
         enhanced_dir="${img_dir/\/image_pose_pairs/\/enhanced\/PHASEFORMER}"
     fi
 
-    echo ">>> RUNNING COLMAP RECONSTRUCTION: $enhanced_dir"
+    echo " RUNNING COLMAP RECONSTRUCTION: $enhanced_dir"
     docker run --rm --gpus all \
       --entrypoint /bin/bash \
       -v ~/.config/gcloud:/root/.config/gcloud \
