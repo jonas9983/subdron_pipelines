@@ -51,7 +51,32 @@ FULL_IMAGE_NAME="europe-west1-docker.pkg.dev/eighth-saga-468413-c9/${IMAGE_NAMES
 if [ "$BUILD_FIRST" = true ]; then
     REPO_DIR="${REPO_DIRS[$STEP]}"
     echo "Building local image: $FULL_IMAGE_NAME from $REPO_DIR"
-    docker build -t "$FULL_IMAGE_NAME" "$REPO_DIR"
+    
+    # Start ssh-agent and add keys for Bitbucket access
+    eval "$(ssh-agent -s)"
+
+    # Determine the correct SSH key path (handle sudo)
+    if [ -n "$SUDO_USER" ]; then
+        USER_HOME=$(getent passwd "$SUDO_USER" | cut -d: -f6)
+        KEY_PATH="$USER_HOME/.ssh/id_ed25519"
+    else
+        KEY_PATH="$HOME/.ssh/id_ed25519"
+    fi
+
+    if [ -f "$KEY_PATH" ]; then
+        echo "Adding SSH key: $KEY_PATH"
+        ssh-add "$KEY_PATH"
+    else
+        echo "Warning: SSH key not found at $KEY_PATH. Build might fail if it needs Bitbucket access."
+    fi
+
+    # Use BuildKit and SSH forwarding for Bitbucket access
+    export DOCKER_BUILDKIT=1
+    docker build --ssh default -t "$FULL_IMAGE_NAME" "$REPO_DIR"
+
+    
+    # Stop ssh-agent
+    kill "${SSH_AGENT_PID}"
 fi
 
 echo "Running local test for step: $STEP using tag: $TAG"
