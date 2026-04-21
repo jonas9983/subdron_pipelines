@@ -57,7 +57,7 @@ fi
 # --- Optional Build ---
 if [ "$BUILD_FIRST" = true ]; then
     if [ "$STEP" == "full" ]; then
-        STEPS_TO_BUILD=("bag" "image")
+        STEPS_TO_BUILD=("bag" "image" "colmap")
     else
         STEPS_TO_BUILD=("$STEP")
     fi
@@ -122,42 +122,70 @@ run_image_step() {
       -e GOOGLE_APPLICATION_CREDENTIALS=/root/.config/gcloud/application_default_credentials.json \
       -e ENV=dev -e PIPELINE_ENV=dev \
       "$image" \
-      -c "python -u main.py PHASEFORMER --download ${img_dir} --upload ${out_dir} --batch_size 8 --upload_every 512 --resume --create-video"
+      -c "python -u main.py PHASEFORMER --download ${img_dir} --upload ${out_dir} --batch_size 8 --upload_every 512 --resume --create-video --video-fps 30"
+}
+
+run_colmap_step() {
+    local img_dir=$1
+    local poses_file=$2
+    local tag=$3
+    local image="europe-west1-docker.pkg.dev/eighth-saga-468413-c9/subdron-colmap/subdron-colmap:${tag}"
+
+    # Use the enhanced images for colmap by default
+    local enhanced_dir="${img_dir/\/image_pose_pairs/\/enhanced\/PHASEFORMER}"
+
+    echo ">>> RUNNING COLMAP RECONSTRUCTION: $enhanced_dir"
+    docker run --rm --gpus all \
+      --entrypoint /bin/bash \
+      -v ~/.config/gcloud:/root/.config/gcloud \
+      --env-file ../subdron_colmap/.env.dev \
+      -e DATABASE_URL="$DB_URL" \
+      -e GOOGLE_APPLICATION_CREDENTIALS=/root/.config/gcloud/application_default_credentials.json \
+      -e ENV=dev \
+      "$image" \
+      -c "python -u main.py --images-prefix ${enhanced_dir} --poses-prefix ${poses_file} --dir-version PHASEFORMER_spatial --matching-strategy spatial --spatial-radius 5.0 --plane-mode single --feature-extractor sift --upload-results"
 }
 
 case $STEP in
     bag)
-        if [ -z "$BAG_PATH" ]; then echo "Error: --bag-path required"; exit 1; fi
+        if [ -z "$BAG_PATH" ]; then
+            echo "Error: --bag-path required"
+            exit 1
+        fi
         run_bag_step "$BAG_PATH" "$TAG"
         ;;
     image)
-        if [ -z "$IMAGE_DIR" ]; then echo "Error: --image-dir required"; exit 1; fi
+        if [ -z "$IMAGE_DIR" ]; then
+            echo "Error: --image-dir required"
+            exit 1
+        fi
         run_image_step "$IMAGE_DIR" "$TAG"
+        ;;
+    colmap)
+        if [ -z "$IMAGE_DIR" ] || [ -z "$COLMAP_POSES_PREFIX" ]; then 
+            echo "Error: --image-dir and --colmap-poses-prefix (csv file) are required for colmap step"
+            exit 1
+        fi
+        run_colmap_step "$IMAGE_DIR" "$COLMAP_POSES_PREFIX" "$TAG"
         ;;
     full)
         if [ -z "$BAG_PATH" ] || [ -z "$IMAGE_DIR" ]; then 
-            echo "Error: Both --bag-path and --image-dir are required for the full step"; exit 1
+            echo "Error: Both --bag-path and --image-dir are required for the full step"
+            exit 1
         fi
-        
+
         # 1. Run Bag Step
         run_bag_step "$BAG_PATH" "$TAG"
 
         # 2. Run Image Step
         run_image_step "$IMAGE_DIR" "$TAG"
-        ;;
-    colmap)
-        if [ -z "$COLMAP_IMAGES_PREFIX" ] || [ -z "$COLMAP_POSES_PREFIX" ]; then 
-            echo "Error: --colmap-images-prefix and --colmap-poses-prefix required for colmap step"; exit 1
+
+        # 3. Run Colmap Step
+        if [ -n "$COLMAP_POSES_PREFIX" ]; then
+            run_colmap_step "$IMAGE_DIR" "$COLMAP_POSES_PREFIX" "$TAG"
+        else
+            echo "Skipping Colmap step in 'full' pipeline because --colmap-poses-prefix was not provided."
         fi
-        docker run --rm --gpus all \
-          --entrypoint /bin/bash \
-          -v ~/.config/gcloud:/root/.config/gcloud \
-          --env-file ../subdron_colmap/.env.dev \
-          -e DATABASE_URL="$DB_URL" \
-          -e GOOGLE_APPLICATION_CREDENTIALS=/root/.config/gcloud/application_default_credentials.json \
-          -e ENV=dev \
-          "$FULL_IMAGE_NAME" \
-          -c "python -u main.py --images-prefix ${COLMAP_IMAGES_PREFIX} --poses-prefix ${COLMAP_POSES_PREFIX} --dir-version PHASEFORMER_spatial --matching-strategy spatial --spatial-radius 5.0 --plane-mode single --feature-extractor sift --upload-results"
         ;;
     *)
         echo "Invalid step: $STEP"
