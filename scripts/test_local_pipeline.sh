@@ -65,7 +65,19 @@ if [ "$BUILD_FIRST" = true ]; then
     for B_STEP in "${STEPS_TO_BUILD[@]}"; do
         REPO_DIR="${REPO_DIRS[$B_STEP]}"
         FULL_NAME="europe-west1-docker.pkg.dev/eighth-saga-468413-c9/${IMAGE_NAMES[$B_STEP]}/${IMAGE_NAMES[$B_STEP]}:${TAG}"
-        echo "Building local image: $FULL_NAME from $REPO_DIR"
+        
+        # Detect Dockerfile location
+        DOCKERFILE_PATH="$REPO_DIR/Dockerfile"
+        if [ ! -f "$DOCKERFILE_PATH" ]; then
+            DOCKERFILE_PATH="$REPO_DIR/docker/Dockerfile"
+        fi
+        
+        if [ ! -f "$DOCKERFILE_PATH" ]; then
+            echo "Error: Could not find Dockerfile in $REPO_DIR or $REPO_DIR/docker/"
+            exit 1
+        fi
+
+        echo "Building local image: $FULL_NAME from $REPO_DIR (using $DOCKERFILE_PATH)"
         
         # Start ssh-agent and add keys for Bitbucket access
         eval "$(ssh-agent -s)"
@@ -78,7 +90,7 @@ if [ "$BUILD_FIRST" = true ]; then
         ssh-add "$KEY_PATH"
         
         export DOCKER_BUILDKIT=1
-        docker build --ssh default -t "$FULL_NAME" "$REPO_DIR"
+        docker build --ssh default -f "$DOCKERFILE_PATH" -t "$FULL_NAME" "$REPO_DIR"
         kill "${SSH_AGENT_PID}"
         
         # Cleanup dangling images to save space
@@ -131,8 +143,11 @@ run_colmap_step() {
     local tag=$3
     local image="europe-west1-docker.pkg.dev/eighth-saga-468413-c9/subdron-colmap/subdron-colmap:${tag}"
 
-    # Use the enhanced images for colmap by default
-    local enhanced_dir="${img_dir/\/image_pose_pairs/\/enhanced\/PHASEFORMER}"
+    # Use the enhanced images for colmap by default, or the override if provided
+    local enhanced_dir=$COLMAP_IMAGES_PREFIX
+    if [ -z "$enhanced_dir" ]; then
+        enhanced_dir="${img_dir/\/image_pose_pairs/\/enhanced\/PHASEFORMER}"
+    fi
 
     echo ">>> RUNNING COLMAP RECONSTRUCTION: $enhanced_dir"
     docker run --rm --gpus all \
@@ -162,8 +177,12 @@ case $STEP in
         run_image_step "$IMAGE_DIR" "$TAG"
         ;;
     colmap)
-        if [ -z "$IMAGE_DIR" ] || [ -z "$COLMAP_POSES_PREFIX" ]; then 
-            echo "Error: --image-dir and --colmap-poses-prefix (csv file) are required for colmap step"
+        if [ -z "$IMAGE_DIR" ] && [ -z "$COLMAP_IMAGES_PREFIX" ]; then
+            echo "Error: --image-dir or --colmap-images-prefix is required for colmap step"
+            exit 1
+        fi
+        if [ -z "$COLMAP_POSES_PREFIX" ]; then 
+            echo "Error: --colmap-poses-prefix (csv file) is required for colmap step"
             exit 1
         fi
         run_colmap_step "$IMAGE_DIR" "$COLMAP_POSES_PREFIX" "$TAG"
