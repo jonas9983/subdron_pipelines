@@ -12,7 +12,7 @@ def process_images_prod(event, context):
     if not file_name.endswith('EXTRACTION_COMPLETE.marker'):
         return
     
-    if '/sparus/tests/' in file_name:
+    if '/tests/' in file_name:
         print(f"Ignoring test marker in production: {file_name}")
         return
     

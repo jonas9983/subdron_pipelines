@@ -12,7 +12,7 @@ def process_images_dev(event, context):
     if not file_name.endswith('EXTRACTION_COMPLETE.marker'):
         return
     
-    if '/sparus/tests/' not in file_name:
+    if '/tests/' not in file_name:
         print(f"Ignoring non-test marker: {file_name}")
         return
     

@@ -11,12 +11,13 @@ def process_colmap_dev(event, context):
     if not file_name.endswith('ENHANCEMENT_COMPLETE.marker'):
         return
     
-    if '/sparus/tests/' not in file_name:
-        print(f"Ignoring non-test marker in dev: {file_name}")
+    if '/tests/' not in file_name:
+        print(f"Ignoring non-test marker: {file_name}")
         return
-    
-    if 'data/sparus/' not in file_name or '/02_Post_Mission/camera/' not in file_name:
+
+    if 'data/' not in file_name or '/02_Post_Mission/camera/' not in file_name:
         return
+
     
     print(f"Processing test completion marker: {file_name}")
     

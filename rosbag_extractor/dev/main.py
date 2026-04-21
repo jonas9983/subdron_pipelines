@@ -30,10 +30,11 @@ def process_bag_file_dev(event, context):
         file_path=f"{bucket_name}/{file_name}",
         cpu=cpu,
         memory=memory,
-        tag=tag_to_test
+        tag=tag_to_test,
+        bucket_name=bucket_name
     )
 
-def create_batch_job(file_path, cpu, memory, tag):
+def create_batch_job(file_path, cpu, memory, tag, bucket_name):
     client = batch_v1.BatchServiceClient()
     job = batch_v1.Job()
     job.task_groups = [batch_v1.TaskGroup()]
@@ -54,7 +55,9 @@ def create_batch_job(file_path, cpu, memory, tag):
     # 1. Standard Environment Variables
     runnable.environment.variables = {
         "INPUT_BAG_PATH": file_path,
-        "PIPELINE_ENV": "dev"
+        "PIPELINE_ENV": "dev",
+        "CLOUD_BUCKET_NAME": bucket_name,
+        "CLOUD_PROJECT_ID": "eighth-saga-468413-c9"
     }
     
     # Secret Environment Variables
