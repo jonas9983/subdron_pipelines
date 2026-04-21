@@ -1,29 +1,58 @@
-# Underwater Vision Pipeline #
+# Subdron Underwater Vision Pipeline
 
-This repository is hosting the Underwater Vision Pipeline, which at the time of this writing consists of the combination of image-processing methods and colmap. The idea is to first process the images with a specified method and then running colmao to retrieve a 3D sparse reconstruction of the scene that was inspected.
+This repository orchestrates the end-to-end processing pipeline for underwater imagery, from raw ROS bags to 3D reconstructions. It manages the deployment of Cloud Functions that trigger specialized Batch Jobs.
 
-## Installation
+## Architecture
 
-We use docker compose for this project. Make sure you follow their [installation guidelines](https://docs.docker.com/compose/install/).
+The pipeline consists of three main stages, each living in its own repository:
 
-After installing docker compose, run the following command
+1.  **Bag Extractor (`subdron_camera_transformation`)**: Extracts images and navigation data from `.bag` files.
+2.  **Image Processing (`subdron_image_processing`)**: Enhances image quality (e.g., using PHASEFORMER) for better feature matching.
+3.  **Colmap Processing (`subdron_colmap`)**: Performs 3D sparse reconstruction using the enhanced images and navigation poses.
 
+## Project Structure
+
+-   `rosbag_extractor/`: Cloud Function code to trigger the Bag Extractor batch job.
+-   `image_processing/`: Cloud Function code to trigger the Image Enhancement batch job.
+-   `colmap_processing/`: Cloud Function code to trigger the Colmap reconstruction batch job.
+-   `scripts/`: Centralized scripts for building, pushing, and deploying the entire pipeline.
+
+## Recommended Workflow
+
+To ensure stability, always follow this multi-stage verification process:
+
+### 1. Local Verification
+Test your changes locally using Docker before pushing to the cloud.
 ```bash
-./clone_and_build.sh
+./scripts/test_local_pipeline.sh --step full --build --bag-path /path/to/test.bag --image-dir /path/to/output
 ```
 
-This shell script will clone the repositories and build them with docker compose. It may take some time to install all the dependencies.
-
-After the docker images are built, you can start using the pipeline.
-
-## Usage
-
-There are two configuration files on the [configs](./configs/) directory that you can use to test the pipeline.
-
-Run the following command to run the pipeline with data coming from the simulation
-
+### 2. Deployment
+Use the unified deployment script to build, push, and deploy in one go.
 ```bash
-sudo ./run_pipeline.sh --config ./configs/simulated_data.json
+./deploy.sh
 ```
+The script will walk you through:
+- Selecting the environment (dev/prod).
+- Deciding whether to build/push images.
+- Setting the tags.
 
-__Note__: Your personal user password may be required since `sudo` is run inside the shell script
+### 3. Verification
+*Verify by uploading a file to the corresponding bucket and checking the logs in Google Cloud Console.*
+
+## Script Reference
+
+| Script | Description |
+| :--- | :--- |
+| `deploy.sh` | **Primary Entry Point (Root)**. Orchestrates building, pushing, and deploying. |
+| `scripts/build_and_push.sh` | Orchestrates Docker builds and pushes for all sub-repos. |
+| `scripts/deploy_dev.sh` | Deploys Cloud Functions to the `dev` project/bucket. |
+| `scripts/deploy_prod.sh` | Deploys Cloud Functions to the `production` project/bucket. |
+| `scripts/test_local_pipeline.sh` | Runs pipeline steps locally using `docker run`. |
+
+## Prerequisites
+
+-   Google Cloud SDK (`gcloud`) authenticated.
+-   Access to the Subdron Artifact Registry.
+-   Docker and Docker Compose installed.
+-   SSH keys configured for private repository access during builds.

@@ -21,6 +21,9 @@ STEP_MAP=(
 TAG=""
 STEP=""
 
+# Map to store specific tags per repository
+declare -A REPO_TAGS
+
 # --- Parse Arguments ---
 while [[ "$#" -gt 0 ]]; do
     case $1 in
@@ -40,11 +43,6 @@ while [[ "$#" -gt 0 ]]; do
     esac
 done
 
-if [ -z "$TAG" ]; then
-    read -p "Enter the TAG for the images (e.g., v1.0.0 or dev): " TAG
-    if [ -z "$TAG" ]; then echo "Error: Tag is required."; exit 1; fi
-fi
-
 if [ -n "$STEP" ]; then
     TARGET_REPO="${STEP_MAP[$STEP]}"
     if [ -z "$TARGET_REPO" ]; then
@@ -52,18 +50,35 @@ if [ -n "$STEP" ]; then
         exit 1
     fi
     REPOS_TO_RUN=("$TARGET_REPO")
-    echo "Starting Build and Push process for step: $STEP (tag: $TAG)"
 else
-    REPOS_TO_RUN=("${!REPO_SCRIPTS[@]}")
-    echo "Starting centralized Build and Push process for ALL steps (tag: $TAG)"
+    REPOS_TO_RUN=("subdron_camera_transformation" "subdron_image_processing" "subdron_colmap")
 fi
+
+# --- Gather Tags Upfront ---
+echo "--- Tag Configuration ---"
+if [ -n "$TAG" ]; then
+    echo "Using global tag '$TAG' for all selected services."
+    for REPO in "${REPOS_TO_RUN[@]}"; do
+        REPO_TAGS[$REPO]="$TAG"
+    done
+else
+    for REPO in "${REPOS_TO_RUN[@]}"; do
+        read -p "Enter the TAG for $REPO (e.g., dev or v1.0.0): " REPO_TAG
+        if [ -z "$REPO_TAG" ]; then
+            echo "Error: Tag is required for $REPO."
+            exit 1
+        fi
+        REPO_TAGS[$REPO]="$REPO_TAG"
+    done
+fi
+echo "--------------------------"
 
 for REPO in "${REPOS_TO_RUN[@]}"; do
     SCRIPT_PATH="${REPO_SCRIPTS[$REPO]}"
-
+    CURRENT_TAG="${REPO_TAGS[$REPO]}"
     
     echo "--------------------------------------------------------"
-    echo "Processing Repository: $REPO"
+    echo "Processing Repository: $REPO (Tag: $CURRENT_TAG)"
     
     if [ ! -f "$SCRIPT_PATH" ]; then
         echo "Error: Script not found at $SCRIPT_PATH. Skipping..."
@@ -90,10 +105,11 @@ for REPO in "${REPOS_TO_RUN[@]}"; do
         echo "Warning: No .env.dev found in $REPO_ROOT"
     fi
 
-    echo "Executing: $SCRIPT_PATH --tag $TAG"
+    echo "Executing: $SCRIPT_PATH --tag $CURRENT_TAG"
     
     # Run the script. (cd ...) ensures we are in the right place
-    (cd "$SCRIPT_DIR" && ./"$SCRIPT_NAME" --tag "$TAG")
+    # We use DEBIAN_FRONTEND=noninteractive and pass the tag to prevent child scripts from asking again
+    (cd "$SCRIPT_DIR" && ./"$SCRIPT_NAME" --tag "$CURRENT_TAG")
 
     # Cleanup temporary env file if we created it
     if [ "$CLEANUP_ENV" = true ]; then
