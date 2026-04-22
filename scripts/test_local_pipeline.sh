@@ -38,6 +38,11 @@ while [[ "$#" -gt 0 ]]; do
         --colmap-poses-prefix) COLMAP_POSES_PREFIX="$2"; shift 2 ;;
         --build) BUILD_FIRST=true; shift 1 ;;
         --base-dir) BASE_UPLOAD_DIR="$2"; shift 2 ;;
+        --sample) 
+            BAG_PATH="subdron_dev/tests/sparus2-25/P1063/manual_bags/P1063_2026-03-10-10-54-33.bag"
+            STEP="full"
+            shift 1 
+            ;;
         *) echo "Unknown parameter: $1"; exit 1 ;;
     esac
 done
@@ -45,83 +50,49 @@ done
 # Normalize step
 if [ "$STEP" == "img" ]; then STEP="image"; fi
 
-if [ -z "$STEP" ]; then
-    echo "Usage: ./test_local_pipeline.sh --step [bag|image|colmap|full] [--build] [options]"
+if [ -z "$STEP" ] && [ -z "$BAG_PATH" ]; then
+    echo "Usage: ./test_local_pipeline.sh --step [bag|image|colmap|full] [-i bag_path] [--sample]"
     exit 1
 fi
 
-# Validate step
-if [[ ! " bag image colmap full " =~ " $STEP " ]]; then
-    echo "Error: Invalid step '$STEP'. Must be one of: bag, image (or img), colmap, full"
-    exit 1
-fi
+# Dynamically detect bucket and environment from bag path
+if [ -n "$BAG_PATH" ]; then
+    # Strip gs:// for logic
+    BAG_CLEAN=${BAG_PATH#gs://}
+    BUCKET_NAME=$(echo "$BAG_CLEAN" | cut -d/ -f1)
+    BASE_UPLOAD_DIR=$(echo "$BAG_CLEAN" | cut -d/ -f2)
+    ROBOT=$(echo "$BAG_CLEAN" | cut -d/ -f3)
+    MISSION_ID=$(echo "$BAG_CLEAN" | cut -d/ -f4)
+    
+    # Extract timestamp from filename: P1063_2026-03-10-10-54-33.bag -> 2026-03-10-10-54-33
+    FILENAME=$(basename "$BAG_CLEAN")
+    TIMESTAMP=$(echo "$FILENAME" | grep -oE "[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{2}-[0-9]{2}-[0-9]{2}")
 
-# --- Optional Build ---
-if [ "$BUILD_FIRST" = true ]; then
-    if [ "$STEP" == "full" ]; then
-        STEPS_TO_BUILD=("bag" "image" "colmap")
-    else
-        STEPS_TO_BUILD=("$STEP")
+    echo "--- Derived Mission Info ---"
+    echo " Bucket:    $BUCKET_NAME"
+    echo " Base Dir:  $BASE_UPLOAD_DIR"
+    echo " Robot:     $ROBOT"
+    echo " Mission:   $MISSION_ID"
+    echo " Timestamp: $TIMESTAMP"
+    echo "----------------------------"
+
+    # Auto-construct missing paths
+    if [ -z "$IMAGE_DIR" ]; then
+        IMAGE_DIR="$BUCKET_NAME/$BASE_UPLOAD_DIR/$ROBOT/$MISSION_ID/02_Post_Mission/camera/$TIMESTAMP/image_pose_pairs"
     fi
-
-    for B_STEP in "${STEPS_TO_BUILD[@]}"; do
-        REPO_DIR="${REPO_DIRS[$B_STEP]}"
-        FULL_NAME="europe-west1-docker.pkg.dev/eighth-saga-468413-c9/${IMAGE_NAMES[$B_STEP]}/${IMAGE_NAMES[$B_STEP]}:${TAG}"
-        
-        # Detect Dockerfile location
-        DOCKERFILE_PATH="$REPO_DIR/Dockerfile"
-        if [ ! -f "$DOCKERFILE_PATH" ]; then
-            DOCKERFILE_PATH="$REPO_DIR/docker/Dockerfile"
-        fi
-        
-        if [ ! -f "$DOCKERFILE_PATH" ]; then
-            echo "Error: Could not find Dockerfile in $REPO_DIR or $REPO_DIR/docker/"
-            exit 1
-        fi
-
-        echo "Building local image: $FULL_NAME from $REPO_DIR (using $DOCKERFILE_PATH)"
-        
-        # Start ssh-agent and add keys for Bitbucket access
-        eval "$(ssh-agent -s)"
-        if [ -n "$SUDO_USER" ]; then
-            USER_HOME=$(getent passwd "$SUDO_USER" | cut -d: -f6)
-            KEY_PATH="$USER_HOME/.ssh/id_ed25519"
-        else
-            KEY_PATH="$HOME/.ssh/id_ed25519"
-        fi
-        ssh-add "$KEY_PATH"
-        
-        export DOCKER_BUILDKIT=1
-        docker build --ssh default -f "$DOCKERFILE_PATH" -t "$FULL_NAME" "$REPO_DIR"
-        kill "${SSH_AGENT_PID}"
-        
-        # Cleanup dangling images to save space
-        echo "Cleaning up dangling Docker images..."
-        docker image prune -f
-    done
+    if [ -z "$COLMAP_POSES_PREFIX" ]; then
+        COLMAP_POSES_PREFIX="$BUCKET_NAME/$BASE_UPLOAD_DIR/$ROBOT/$MISSION_ID/02_Post_Mission/navigation/$TIMESTAMP/navigation_not_converted.csv"
+    fi
 fi
 
-# Fetch the DATABASE_URL
-echo "Fetching DATABASE_URL from Secret Manager..."
-DB_URL=$(gcloud secrets versions access latest --secret="DB_URL" --project="eighth-saga-468413-c9")
-
-# Dynamically detect bucket and base_dir from paths
-if [[ "$BAG_PATH" == gs://* ]]; then
-    BUCKET_NAME=$(echo "$BAG_PATH" | cut -d/ -f3)
-elif [[ "$BAG_PATH" == */* ]]; then
-    BUCKET_NAME=$(echo "$BAG_PATH" | cut -d/ -f1)
+# Fetch the DATABASE_URL if not already set
+if [ -z "$DATABASE_URL" ]; then
+    echo "Fetching DATABASE_URL from Secret Manager..."
+    DB_URL=$(gcloud secrets versions access latest --secret="DB_URL" --project="eighth-saga-468413-c9")
 else
-    BUCKET_NAME="subdron-raw-data-dev"
+    echo "Using existing DATABASE_URL from environment."
+    DB_URL="$DATABASE_URL"
 fi
-
-# Infer BASE_UPLOAD_DIR (e.g., 'tests' or 'data') from image_dir if provided
-if [ -n "$IMAGE_DIR" ]; then
-    # Extract the part after the bucket: subdron_dev/tests/... -> tests
-    BASE_UPLOAD_DIR=$(echo "$IMAGE_DIR" | sed "s|^$BUCKET_NAME/||" | cut -d/ -f1)
-fi
-
-echo "Using Bucket: $BUCKET_NAME"
-echo "Using Base Dir: $BASE_UPLOAD_DIR"
 
 run_bag_step() {
     local bag=$1
