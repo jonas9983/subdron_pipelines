@@ -9,6 +9,7 @@ IMAGE_DIR=""
 COLMAP_IMAGES_PREFIX=""
 COLMAP_POSES_PREFIX=""
 BUILD_FIRST=false
+BASE_UPLOAD_DIR="tests" # Default to tests directory for local pipeline
 
 # Map steps to their local repository directories
 declare -A REPO_DIRS
@@ -36,6 +37,7 @@ while [[ "$#" -gt 0 ]]; do
         --colmap-images-prefix) COLMAP_IMAGES_PREFIX="$2"; shift 2 ;;
         --colmap-poses-prefix) COLMAP_POSES_PREFIX="$2"; shift 2 ;;
         --build) BUILD_FIRST=true; shift 1 ;;
+        --base-dir) BASE_UPLOAD_DIR="$2"; shift 2 ;;
         *) echo "Unknown parameter: $1"; exit 1 ;;
     esac
 done
@@ -103,38 +105,68 @@ fi
 echo "Fetching DATABASE_URL from Secret Manager..."
 DB_URL=$(gcloud secrets versions access latest --secret="DB_URL" --project="eighth-saga-468413-c9")
 
+# Dynamically detect bucket and base_dir from paths
+if [[ "$BAG_PATH" == gs://* ]]; then
+    BUCKET_NAME=$(echo "$BAG_PATH" | cut -d/ -f3)
+elif [[ "$BAG_PATH" == */* ]]; then
+    BUCKET_NAME=$(echo "$BAG_PATH" | cut -d/ -f1)
+else
+    BUCKET_NAME="subdron-raw-data-dev"
+fi
+
+# Infer BASE_UPLOAD_DIR (e.g., 'tests' or 'data') from image_dir if provided
+if [ -n "$IMAGE_DIR" ]; then
+    # Extract the part after the bucket: subdron_dev/tests/... -> tests
+    BASE_UPLOAD_DIR=$(echo "$IMAGE_DIR" | sed "s|^$BUCKET_NAME/||" | cut -d/ -f1)
+fi
+
+echo "Using Bucket: $BUCKET_NAME"
+echo "Using Base Dir: $BASE_UPLOAD_DIR"
+
 run_bag_step() {
     local bag=$1
     local tag=$2
     local image="europe-west1-docker.pkg.dev/eighth-saga-468413-c9/subdron-rosbag-extractor/subdron-rosbag-extractor:${tag}"
     
-    echo " RUNNING BAG EXTRACTION: $bag"
+    # Strip gs:// to handle literal copy-paste from GCS UI
+    local bag_clean=${bag#gs://}
+
+    echo " RUNNING BAG EXTRACTION: $bag_clean"
     docker run --rm \
       --entrypoint /bin/bash \
       -v ~/.config/gcloud:/root/.config/gcloud \
+      -v "$HOME/git/subdron-utils/subdron_utils:/usr/local/lib/python3.8/dist-packages/subdron_utils" \
       --env-file ../subdron_camera_transformation/.env.dev \
       -e DATABASE_URL="$DB_URL" \
+      -e BASE_UPLOAD_DIR="$BASE_UPLOAD_DIR" \
+      -e CLOUD_BUCKET_NAME="$BUCKET_NAME" \
       -e GOOGLE_APPLICATION_CREDENTIALS=/root/.config/gcloud/application_default_credentials.json \
       "$image" \
-      -c "source /opt/ros/noetic/setup.bash && source /catkin_ws/devel/setup.bash && python main.py -i $bag --extract-images --post-process --upload-results --create-video --video-fps 30"
+      -c "source /opt/ros/noetic/setup.bash && source /catkin_ws/devel/setup.bash && python main.py -i $bag_clean --extract-images --post-process --upload-results --create-video --video-fps 30"
 }
 
 run_image_step() {
     local img_dir=$1
     local tag=$2
     local image="europe-west1-docker.pkg.dev/eighth-saga-468413-c9/subdron-image-processing/subdron-image-processing:${tag}"
-    local out_dir="${img_dir/\/image_pose_pairs/\/enhanced\/PHASEFORMER}"
+    
+    # Strip gs://
+    local img_dir_clean=${img_dir#gs://}
+    local out_dir="${img_dir_clean/\/image_pose_pairs/\/enhanced\/PHASEFORMER}"
 
-    echo " RUNNING IMAGE ENHANCEMENT: $img_dir"
+    echo " RUNNING IMAGE ENHANCEMENT: $img_dir_clean"
     docker run --rm --gpus all \
       --entrypoint /bin/bash \
       -v ~/.config/gcloud:/root/.config/gcloud \
+      -v "$HOME/git/subdron-utils/subdron_utils:/opt/venv/lib/python3.9/site-packages/subdron_utils" \
       --env-file ../subdron_image_processing/.env.dev \
       -e DATABASE_URL="$DB_URL" \
       -e GOOGLE_APPLICATION_CREDENTIALS=/root/.config/gcloud/application_default_credentials.json \
       -e ENV=dev -e PIPELINE_ENV=dev \
+      -e BASE_UPLOAD_DIR="$BASE_UPLOAD_DIR" \
+      -e CLOUD_BUCKET_NAME="$BUCKET_NAME" \
       "$image" \
-      -c "python -u main.py PHASEFORMER --download ${img_dir} --upload ${out_dir} --batch_size 8 --upload_every 512 --resume --create-video --video-fps 30"
+      -c "python -u main.py PHASEFORMER --download ${img_dir_clean} --upload ${out_dir} --batch_size 8 --upload_every 512 --resume --create-video --video-fps 30"
 }
 
 run_colmap_step() {
@@ -143,22 +175,29 @@ run_colmap_step() {
     local tag=$3
     local image="europe-west1-docker.pkg.dev/eighth-saga-468413-c9/subdron-colmap/subdron-colmap:${tag}"
 
-    # Use the enhanced images for colmap by default, or the override if provided
+    # Strip gs:// from all inputs
+    local img_dir_clean=${img_dir#gs://}
+    local poses_file_clean=${poses_file#gs://}
+
     local enhanced_dir=$COLMAP_IMAGES_PREFIX
     if [ -z "$enhanced_dir" ]; then
-        enhanced_dir="${img_dir/\/image_pose_pairs/\/enhanced\/PHASEFORMER}"
+        enhanced_dir="${img_dir_clean/\/image_pose_pairs/\/enhanced\/PHASEFORMER}"
     fi
+    enhanced_dir=${enhanced_dir#gs://}
 
     echo " RUNNING COLMAP RECONSTRUCTION: $enhanced_dir"
     docker run --rm --gpus all \
       --entrypoint /bin/bash \
       -v ~/.config/gcloud:/root/.config/gcloud \
+      -v "$HOME/git/subdron-utils/subdron_utils:/opt/venv/lib/python3.10/site-packages/subdron_utils" \
       --env-file ../subdron_colmap/.env.dev \
       -e DATABASE_URL="$DB_URL" \
       -e GOOGLE_APPLICATION_CREDENTIALS=/root/.config/gcloud/application_default_credentials.json \
       -e ENV=dev \
+      -e BASE_UPLOAD_DIR="$BASE_UPLOAD_DIR" \
+      -e CLOUD_BUCKET_NAME="$BUCKET_NAME" \
       "$image" \
-      -c "python -u main.py --images-prefix ${enhanced_dir} --poses-prefix ${poses_file} --dir-version PHASEFORMER_spatial --matching-strategy spatial --spatial-radius 5.0 --plane-mode single --feature-extractor sift --upload-results"
+      -c "python -u main.py --images-prefix ${enhanced_dir} --poses-prefix ${poses_file_clean} --dir-version PHASEFORMER_spatial --matching-strategy spatial --spatial-radius 5.0 --plane-mode single --feature-extractor sift --upload-results"
 }
 
 case $STEP in

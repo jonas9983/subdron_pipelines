@@ -24,6 +24,10 @@ def process_images_dev(event, context):
     timestamp = marker_data['timestamp']
     image_dir = marker_data['image_dir']
     
+    # Prepend bucket name to ensure subdron_utils can resolve the path in Batch
+    if not image_dir.startswith('gs://'):
+        image_dir = f"gs://{bucket_name}/{image_dir.lstrip('/')}"
+    
     # Read the tag we want to test from Env Vars
     tag_to_test = os.getenv('TARGET_IMAGE_TAG', 'dev')
     
@@ -37,10 +41,11 @@ def process_images_dev(event, context):
             method=method,
             mission_id=mission_id,
             timestamp=timestamp,
-            tag=tag_to_test
+            tag=tag_to_test,
+            bucket_name=bucket_name
         )
 
-def create_image_processing_job(image_dir, method, mission_id, timestamp, tag):
+def create_image_processing_job(image_dir, method, mission_id, timestamp, tag, bucket_name):
     client = batch_v1.BatchServiceClient()
     job = batch_v1.Job()
     job.task_groups = [batch_v1.TaskGroup()]
@@ -64,7 +69,9 @@ def create_image_processing_job(image_dir, method, mission_id, timestamp, tag):
         "ENV": "dev",
         "PIPELINE_ENV": "dev",
         "MISSION_ID": mission_id,
-        "TIMESTAMP": timestamp
+        "TIMESTAMP": timestamp,
+        "CLOUD_BUCKET_NAME": bucket_name,
+        "BASE_UPLOAD_DIR": "tests"
     }
     
     # Inject Database Secret

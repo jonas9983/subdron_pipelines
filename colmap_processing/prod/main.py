@@ -34,6 +34,12 @@ def process_colmap_prod(event, context):
     use_checkpoint = marker_data.get("use_checkpoint", False)
     image_range = marker_data.get("image_range", "")
 
+    # Prepend bucket name to ensure subdron_utils can resolve the path in Batch
+    if images_prefix and not images_prefix.startswith('gs://'):
+        images_prefix = f"gs://{bucket_name}/{images_prefix.lstrip('/')}"
+    if poses_prefix and not poses_prefix.startswith('gs://'):
+        poses_prefix = f"gs://{bucket_name}/{poses_prefix.lstrip('/')}"
+
     if method == 'CLAHE' or 'CLAHE' in images_prefix:
         print(f"Skipping job: Data uses CLAHE method ({images_prefix})")
         return
@@ -102,7 +108,8 @@ def create_colmap_job(images_prefix, poses_prefix, use_checkpoint, image_range,
     runnable.environment.variables = {
         "ENV": "prod",
         "MISSION_ID": mission_id,
-        "TIMESTAMP": timestamp
+        "TIMESTAMP": timestamp,
+        "BASE_UPLOAD_DIR": "data"
     }
     
     job.task_groups[0].task_spec = batch_v1.TaskSpec()
