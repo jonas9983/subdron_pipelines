@@ -36,7 +36,7 @@ done
 
 echo " Preparing PRODUCTION Pipeline Deployment..."
 
-# --- Gather missing configuration interactively ---
+# --- Gather missing configuration only if not provided ---
 if [ -z "$TRIGGER_BUCKET" ]; then
     read -p "Enter the PRODUCTION Trigger Bucket name [default: subdron]: " INPUT_BUCKET
     TRIGGER_BUCKET="${INPUT_BUCKET:-subdron}"

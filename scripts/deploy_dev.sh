@@ -46,7 +46,7 @@ done
 
 echo " Preparing DEV Pipeline Deployment..."
 
-# --- Gather missing tags interactively ---
+# --- Gather missing configuration only if not provided ---
 if [ -z "$TRIGGER_BUCKET" ]; then
     read -p "Enter the Trigger Bucket name [default: subdron_dev]: " INPUT_BUCKET
     TRIGGER_BUCKET="${INPUT_BUCKET:-subdron_dev}"
@@ -57,7 +57,7 @@ echo " Trigger Bucket: $TRIGGER_BUCKET"
 if [ "$SKIP_BAG" = false ] && [ -z "$BAG_TAG" ]; then
     read -p "Enter the tag for Bag Extractor (process_bag_file_dev): " BAG_TAG
     if [ -z "$BAG_TAG" ]; then
-        echo "ERROR: Bag tag cannot be empty. Use --skip bag if you want to skip it."
+        echo "ERROR: Bag tag cannot be empty."
         exit 1
     fi
 fi
@@ -65,7 +65,7 @@ fi
 if [ "$SKIP_IMG" = false ] && [ -z "$IMG_TAG" ]; then
     read -p "Enter the tag for Image Processing Service (process_images_dev): " IMG_TAG
     if [ -z "$IMG_TAG" ]; then
-        echo "ERROR: Image processing tag cannot be empty. Use --skip img if you want to skip it."
+        echo "ERROR: Image processing tag cannot be empty."
         exit 1
     fi
 fi
@@ -73,7 +73,7 @@ fi
 if [ "$SKIP_COLMAP" = false ] && [ -z "$COLMAP_TAG" ]; then
     read -p "Enter the tag for Colmap Service (process_colmap_dev): " COLMAP_TAG
     if [ -z "$COLMAP_TAG" ]; then
-        echo "ERROR: Colmap tag cannot be empty. Use --skip colmap if you want to skip it."
+        echo "ERROR: Colmap tag cannot be empty."
         exit 1
     fi
 fi
