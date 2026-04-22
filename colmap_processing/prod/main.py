@@ -109,7 +109,7 @@ def create_colmap_job(images_prefix, poses_prefix, use_checkpoint, image_range,
         "ENV": "prod",
         "MISSION_ID": mission_id,
         "TIMESTAMP": timestamp,
-        "BASE_UPLOAD_DIR": "data"
+        "BASE_UPLOAD_DIR": os.getenv("BASE_UPLOAD_DIR", "data")
     }
     
     job.task_groups[0].task_spec = batch_v1.TaskSpec()

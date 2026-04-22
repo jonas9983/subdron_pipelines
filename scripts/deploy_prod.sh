@@ -62,7 +62,7 @@ if [ "$SKIP_BAG" = false ]; then
       --region europe-west1 \
       --source ./rosbag_extractor/prod \
       --no-gen2 \
-      --set-env-vars TARGET_IMAGE_TAG=${RELEASE_TAG}
+      --set-env-vars TARGET_IMAGE_TAG=${RELEASE_TAG},BASE_UPLOAD_DIR=data
 else
     echo "--> SKIPPING: Bag Extractor"
 fi
@@ -77,7 +77,7 @@ if [ "$SKIP_IMG" = false ]; then
       --region europe-west1 \
       --source ./image_processing/prod \
       --no-gen2 \
-      --set-env-vars TARGET_IMAGE_TAG=${RELEASE_TAG}
+      --set-env-vars TARGET_IMAGE_TAG=${RELEASE_TAG},BASE_UPLOAD_DIR=data
 else
     echo "--> SKIPPING: Image Processing"
 fi
@@ -92,7 +92,7 @@ if [ "$SKIP_COLMAP" = false ]; then
       --region europe-west1 \
       --source ./colmap_processing/prod \
       --no-gen2 \
-      --set-env-vars TARGET_IMAGE_TAG=${RELEASE_TAG}
+      --set-env-vars TARGET_IMAGE_TAG=${RELEASE_TAG},BASE_UPLOAD_DIR=data
 else
     echo "--> SKIPPING: Colmap Service"
 fi

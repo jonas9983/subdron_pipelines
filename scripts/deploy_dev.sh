@@ -90,7 +90,7 @@ if [ "$SKIP_BAG" = false ]; then
       --region europe-west1 \
       --source ./rosbag_extractor/dev \
       --no-gen2 \
-      --set-env-vars TARGET_IMAGE_TAG=${BAG_TAG}
+      --set-env-vars TARGET_IMAGE_TAG=${BAG_TAG},BASE_UPLOAD_DIR=tests
 else
     echo "--> SKIPPING: Bag Extractor"
 fi
@@ -105,7 +105,7 @@ if [ "$SKIP_IMG" = false ]; then
       --region europe-west1 \
       --source ./image_processing/dev \
       --no-gen2 \
-      --set-env-vars TARGET_IMAGE_TAG=${IMG_TAG}
+      --set-env-vars TARGET_IMAGE_TAG=${IMG_TAG},BASE_UPLOAD_DIR=tests
 else
     echo "--> SKIPPING: Image Processing"
 fi
@@ -120,7 +120,7 @@ if [ "$SKIP_COLMAP" = false ]; then
       --region europe-west1 \
       --source ./colmap_processing/dev \
       --no-gen2 \
-      --set-env-vars TARGET_IMAGE_TAG=${COLMAP_TAG}
+      --set-env-vars TARGET_IMAGE_TAG=${COLMAP_TAG},BASE_UPLOAD_DIR=tests
 else
     echo "--> SKIPPING: Colmap Service"
 fi

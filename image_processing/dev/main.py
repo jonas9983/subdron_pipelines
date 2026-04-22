@@ -71,7 +71,7 @@ def create_image_processing_job(image_dir, method, mission_id, timestamp, tag, b
         "MISSION_ID": mission_id,
         "TIMESTAMP": timestamp,
         "CLOUD_BUCKET_NAME": bucket_name,
-        "BASE_UPLOAD_DIR": "tests"
+        "BASE_UPLOAD_DIR": os.getenv("BASE_UPLOAD_DIR", "tests")
     }
     
     # Inject Database Secret

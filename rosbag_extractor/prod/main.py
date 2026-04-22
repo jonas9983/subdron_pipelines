@@ -59,7 +59,7 @@ def create_batch_job(file_path, cpu, memory, tag, bucket_name):
         "PIPELINE_ENV": "production",
         "CLOUD_BUCKET_NAME": bucket_name,
         "CLOUD_PROJECT_ID": "eighth-saga-468413-c9",
-        "BASE_UPLOAD_DIR": "data"
+        "BASE_UPLOAD_DIR": os.getenv("BASE_UPLOAD_DIR", "data")
     }
     
     # Secret Environment Variables
