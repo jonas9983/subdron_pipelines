@@ -31,11 +31,18 @@ def process_colmap_dev(event, context):
     use_checkpoint = marker_data.get("use_checkpoint", False)
     image_range = marker_data.get("image_range", "")
 
-    # Prepend bucket name to ensure subdron_utils can resolve the path in Batch
+    # Ensure we have a valid gs:// path without double bucket names
     if images_prefix and not images_prefix.startswith('gs://'):
-        images_prefix = f"gs://{bucket_name}/{images_prefix.lstrip('/')}"
+        if images_prefix.startswith(f"{bucket_name}/"):
+            images_prefix = f"gs://{images_prefix}"
+        else:
+            images_prefix = f"gs://{bucket_name}/{images_prefix.lstrip('/')}"
+            
     if poses_prefix and not poses_prefix.startswith('gs://'):
-        poses_prefix = f"gs://{bucket_name}/{poses_prefix.lstrip('/')}"
+        if poses_prefix.startswith(f"{bucket_name}/"):
+            poses_prefix = f"gs://{poses_prefix}"
+        else:
+            poses_prefix = f"gs://{bucket_name}/{poses_prefix.lstrip('/')}"
 
     if method == 'CLAHE' or 'CLAHE' in images_prefix:
         print(f"Skipping job: Data uses CLAHE method ({images_prefix})")

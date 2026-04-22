@@ -28,9 +28,12 @@ def process_images_prod(event, context):
     timestamp = marker_data['timestamp']
     image_dir = marker_data['image_dir']
     
-    # Prepend bucket name to ensure subdron_utils can resolve the path in Batch
+    # Ensure we have a valid gs:// path without double bucket names
     if not image_dir.startswith('gs://'):
-        image_dir = f"gs://{bucket_name}/{image_dir.lstrip('/')}"
+        if image_dir.startswith(f"{bucket_name}/"):
+            image_dir = f"gs://{image_dir}"
+        else:
+            image_dir = f"gs://{bucket_name}/{image_dir.lstrip('/')}"
     
     # Read the tag we want to test from Env Vars
     tag_to_test = os.getenv('TARGET_IMAGE_TAG', 'production')
