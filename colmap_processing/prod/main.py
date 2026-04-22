@@ -41,6 +41,14 @@ def process_colmap_prod(event, context):
         else:
             images_prefix = f"gs://{bucket_name}/{images_prefix.lstrip('/')}"
             
+    # Auto-construct poses_prefix if missing
+    if not poses_prefix and images_prefix:
+        parts = images_prefix.split('/02_Post_Mission/camera/')
+        if len(parts) == 2:
+            base_path = parts[0]
+            ts = parts[1].split('/')[0]
+            poses_prefix = f"{base_path}/02_Post_Mission/navigation/{ts}/navigation_not_converted.csv"
+
     if poses_prefix and not poses_prefix.startswith('gs://'):
         if poses_prefix.startswith(f"{bucket_name}/"):
             poses_prefix = f"gs://{poses_prefix}"
