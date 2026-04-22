@@ -11,7 +11,7 @@ def process_colmap_dev(event, context):
     if not file_name.endswith('ENHANCEMENT_COMPLETE.marker'):
         return
 
-    if 'data/' not in file_name or '/02_Post_Mission/camera/' not in file_name:
+    if '/02_Post_Mission/camera/' not in file_name:
         return
 
     

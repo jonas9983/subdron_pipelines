@@ -15,7 +15,7 @@ def process_colmap_prod(event, context):
         print(f"Ignoring test marker in production: {file_name}")
         return
     
-    if 'data/' not in file_name or '/02_Post_Mission/camera/' not in file_name:
+    if '/02_Post_Mission/camera/' not in file_name:
         return
     
     print(f"Processing completion marker: {file_name}")
