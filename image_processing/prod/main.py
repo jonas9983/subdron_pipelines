@@ -68,7 +68,7 @@ def create_image_processing_job(image_dir, method, mission_id, timestamp, tag, b
     runnable.container.entrypoint = "/bin/bash"
     runnable.container.commands = [
         "-c",
-        f"python main.py {method} --download {image_dir} --upload {output_dir} --batch_size 8 --upload_every 512 --resume --create-video"
+        f"python main.py {method} --download {image_dir} --upload {output_dir} --batch_size 8 --upload_every 512 --resume --create-video --video-fps 30"
     ]
 
     runnable.environment = batch_v1.Environment()

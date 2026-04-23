@@ -15,6 +15,9 @@ def process_bag_file_prod(event, context):
     if '/03_Logs/test_bags/' in file_name:
         return
     
+    # Dynamically determine the base directory (tests or data)
+    base_dir = "tests" if file_name.startswith("tests/") else "data"
+    
     storage_client = storage.Client()
     bucket = storage_client.bucket(bucket_name)
     blob = bucket.blob(file_name)
@@ -28,14 +31,15 @@ def process_bag_file_prod(event, context):
     tag_to_test = os.getenv('TARGET_IMAGE_TAG', 'production')
     
     create_batch_job(
-        file_path=f"{bucket_name}/{file_name}",
+        file_path=f"gs://{bucket_name}/{file_name}",
         cpu=cpu,
         memory=memory,
         tag=tag_to_test,
-        bucket_name=bucket_name
+        bucket_name=bucket_name,
+        base_dir=base_dir
     )
 
-def create_batch_job(file_path, cpu, memory, tag, bucket_name):
+def create_batch_job(file_path, cpu, memory, tag, bucket_name, base_dir):
     client = batch_v1.BatchServiceClient()
     job = batch_v1.Job()
     job.task_groups = [batch_v1.TaskGroup()]
@@ -59,7 +63,7 @@ def create_batch_job(file_path, cpu, memory, tag, bucket_name):
         "PIPELINE_ENV": "production",
         "CLOUD_BUCKET_NAME": bucket_name,
         "CLOUD_PROJECT_ID": "eighth-saga-468413-c9",
-        "BASE_UPLOAD_DIR": os.getenv("BASE_UPLOAD_DIR", "data")
+        "BASE_UPLOAD_DIR": base_dir
     }
     
     # Secret Environment Variables
