@@ -94,6 +94,25 @@ else
     DB_URL="$DATABASE_URL"
 fi
 
+# --- 1. Build if requested ---
+if [ "$BUILD_FIRST" = true ]; then
+    if [ -n "$STEP" ] && [ "$STEP" != "full" ]; then
+        REPO_DIR="${REPO_DIRS[$STEP]}"
+        echo "--- Building step: $STEP in $REPO_DIR ---"
+        # Use the local push_to_registry.sh script which is optimized
+        (cd "$REPO_DIR" && ./shell_scripts/push_to_registry.sh --tag "$TAG")
+    elif [ "$STEP" == "full" ]; then
+        for S in "bag" "image" "colmap"; do
+            REPO_DIR="${REPO_DIRS[$S]}"
+            echo "--- Building step: $S in $REPO_DIR ---"
+            (cd "$REPO_DIR" && ./shell_scripts/push_to_registry.sh --tag "$TAG")
+        done
+    else
+        echo "Error: --build requires --step to be specified."
+        exit 1
+    fi
+fi
+
 run_bag_step() {
     local bag=$1
     local tag=$2
