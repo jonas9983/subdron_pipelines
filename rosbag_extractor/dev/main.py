@@ -51,14 +51,13 @@ def create_batch_job(file_path, cpu, memory, tag, bucket_name, base_dir):
     runnable.container.entrypoint = "/bin/bash"
     runnable.container.commands = [
         "-c",
-        "source /opt/ros/noetic/setup.bash && source /catkin_ws/devel/setup.bash && python main.py -i ${INPUT_BAG_PATH} --extract-images --post-process --upload-results --create-video --video-fps 30"
+        f"source /opt/ros/noetic/setup.bash && source /catkin_ws/devel/setup.bash && python main.py -i {file_path} --extract-images --post-process --upload-results --create-video --video-fps 30"
     ]
     
     runnable.environment = batch_v1.Environment()
     
     # 1. Standard Environment Variables
     runnable.environment.variables = {
-        "INPUT_BAG_PATH": file_path,
         "PIPELINE_ENV": "dev",
         "CLOUD_BUCKET_NAME": bucket_name,
         "CLOUD_PROJECT_ID": "eighth-saga-468413-c9",
