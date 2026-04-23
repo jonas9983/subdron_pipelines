@@ -50,7 +50,7 @@ The pipeline is event-driven and uses marker files to sequence processing stages
 ### Environment Workflow
 
 #### Development (`dev`)
-- **Bucket Path**: `subdron_dev/tests/`
+- **Bucket Path**: `subdron_dev/tests/.../03_Logs/test_bags`
 - **Container Tags**: Defaults to `dev`. Can be overridden with `TARGET_IMAGE_TAG`.
 - **Purpose**: Rapid testing of new algorithms and matching strategies.
 
