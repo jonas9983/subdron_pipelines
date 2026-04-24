@@ -39,7 +39,7 @@ while [[ "$#" -gt 0 ]]; do
         --build) BUILD_FIRST=true; shift 1 ;;
         --base-dir) BASE_UPLOAD_DIR="$2"; shift 2 ;;
         --sample) 
-            BAG_PATH="subdron_dev/tests/sparus2-25/P1063/test_bags/P1063_2026-03-10-10-54-33.bag"
+            BAG_PATH="subdron_dev/tests/sparus2-25/P1063/03_Logs/test_bags/P1063_2026-03-10-10-54-33.bag"
             STEP="full"
             shift 1
             ;;
@@ -101,15 +101,15 @@ if [ "$BUILD_FIRST" = true ]; then
         echo "--- Building image locally: $STEP in $REPO_DIR ---"
         # Determine correct build script path
         BUILD_SCRIPT="./shell_scripts/build.sh"
-        if [ "$STEP" == "image" ]; then BUILD_SCRIPT="./shell_scripts/build.dev.sh"; fi
+        if [ "$STEP" == "image" ] || [ "$STEP" == "colmap" ]; then BUILD_SCRIPT="./shell_scripts/build.dev.sh"; fi
         
         (cd "$REPO_DIR" && bash "$BUILD_SCRIPT" --tag "$TAG")
     elif [ "$STEP" == "full" ]; then
-        for S in "bag" "image"; do
+        for S in "bag" "image" "colmap"; do
             REPO_DIR="${REPO_DIRS[$S]}"
             echo "--- Building image locally: $S in $REPO_DIR ---"
             BUILD_SCRIPT="./shell_scripts/build.sh"
-            if [ "$S" == "image" ]; then BUILD_SCRIPT="./shell_scripts/build.dev.sh"; fi
+            if [ "$S" == "image" ] || [ "$S" == "colmap" ]; then BUILD_SCRIPT="./shell_scripts/build.dev.sh"; fi
             (cd "$REPO_DIR" && bash "$BUILD_SCRIPT" --tag "$TAG")
         done
     fi
@@ -118,7 +118,7 @@ fi
 run_bag_step() {
     local bag=$1
     local tag=$2
-    local image="europe-west1-docker.pkg.dev/eighth-saga-468413-c9/subdron-rosbag-extractor/subdron-rosbag-extractor:${tag}"
+    local image="subdron-rosbag-extractor:${tag}"
     
     # Strip gs:// to handle literal copy-paste from GCS UI
     local bag_clean=${bag#gs://}
@@ -142,7 +142,7 @@ run_bag_step() {
 run_image_step() {
     local img_dir=$1
     local tag=$2
-    local image="europe-west1-docker.pkg.dev/eighth-saga-468413-c9/subdron-image-processing/subdron-image-processing:${tag}"
+    local image="subdron-image-processing:${tag}"
     
     # Strip gs://
     local img_dir_clean=${img_dir#gs://}
@@ -169,7 +169,7 @@ run_colmap_step() {
     local img_dir=$1
     local poses_file=$2
     local tag=$3
-    local image="europe-west1-docker.pkg.dev/eighth-saga-468413-c9/subdron-colmap/subdron-colmap:${tag}"
+    local image="subdron-colmap:${tag}"
 
     # Strip gs:// from all inputs
     local img_dir_clean=${img_dir#gs://}
@@ -181,11 +181,13 @@ run_colmap_step() {
     fi
     enhanced_dir=${enhanced_dir#gs://}
 
-    echo " RUNNING COLMAP RECONSTRUCTION: $enhanced_dir"
+    echo " RUNNING COLMAP RECONSTRUCTION (Local Code): $enhanced_dir"
     docker run --rm --gpus all \
       --entrypoint /bin/bash \
       -v ~/.config/gcloud:/root/.config/gcloud \
       -v "$HOME/git/subdron-utils/subdron_utils:/opt/venv/lib/python3.10/site-packages/subdron_utils" \
+      -v "$HOME/git/subdron_colmap:/app" \
+      -w /app \
       --env-file ../subdron_colmap/.env.dev \
       -e DATABASE_URL="$DB_URL" \
       -e GOOGLE_APPLICATION_CREDENTIALS=/root/.config/gcloud/application_default_credentials.json \
@@ -193,7 +195,7 @@ run_colmap_step() {
       -e BASE_UPLOAD_DIR="$BASE_UPLOAD_DIR" \
       -e CLOUD_BUCKET_NAME="$BUCKET_NAME" \
       "$image" \
-      -c "python -u main.py --images-prefix ${enhanced_dir} --poses-prefix ${poses_file_clean} --dir-version PHASEFORMER_spatial --matching-strategy spatial --spatial-radius 5.0 --plane-mode single --feature-extractor sift --upload-results"
+      -c "python3 -u main.py --images-prefix ${enhanced_dir} --poses-prefix ${poses_file_clean} --dir-version PHASEFORMER_spatial --matching-strategy spatial --spatial-radius 5.0 --plane-mode single --feature-extractor sift --upload-results"
 }
 
 case $STEP in
