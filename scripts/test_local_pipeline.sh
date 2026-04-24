@@ -39,9 +39,9 @@ while [[ "$#" -gt 0 ]]; do
         --build) BUILD_FIRST=true; shift 1 ;;
         --base-dir) BASE_UPLOAD_DIR="$2"; shift 2 ;;
         --sample) 
-            BAG_PATH="subdron_dev/tests/sparus2-25/P1063/manual_bags/P1063_2026-03-10-10-54-33.bag"
+            BAG_PATH="subdron_dev/tests/sparus2-25/P1063/test_bags/P1063_2026-03-10-10-54-33.bag"
             STEP="full"
-            shift 1 
+            shift 1
             ;;
         *) echo "Unknown parameter: $1"; exit 1 ;;
     esac
@@ -98,18 +98,20 @@ fi
 if [ "$BUILD_FIRST" = true ]; then
     if [ -n "$STEP" ] && [ "$STEP" != "full" ]; then
         REPO_DIR="${REPO_DIRS[$STEP]}"
-        echo "--- Building step: $STEP in $REPO_DIR ---"
-        # Use the local push_to_registry.sh script which is optimized
-        (cd "$REPO_DIR" && ./shell_scripts/push_to_registry.sh --tag "$TAG")
+        echo "--- Building image locally: $STEP in $REPO_DIR ---"
+        # Determine correct build script path
+        BUILD_SCRIPT="./shell_scripts/build.sh"
+        if [ "$STEP" == "image" ]; then BUILD_SCRIPT="./shell_scripts/build.dev.sh"; fi
+        
+        (cd "$REPO_DIR" && bash "$BUILD_SCRIPT" --tag "$TAG")
     elif [ "$STEP" == "full" ]; then
-        for S in "bag" "image" "colmap"; do
+        for S in "bag" "image"; do
             REPO_DIR="${REPO_DIRS[$S]}"
-            echo "--- Building step: $S in $REPO_DIR ---"
-            (cd "$REPO_DIR" && ./shell_scripts/push_to_registry.sh --tag "$TAG")
+            echo "--- Building image locally: $S in $REPO_DIR ---"
+            BUILD_SCRIPT="./shell_scripts/build.sh"
+            if [ "$S" == "image" ]; then BUILD_SCRIPT="./shell_scripts/build.dev.sh"; fi
+            (cd "$REPO_DIR" && bash "$BUILD_SCRIPT" --tag "$TAG")
         done
-    else
-        echo "Error: --build requires --step to be specified."
-        exit 1
     fi
 fi
 
@@ -121,18 +123,20 @@ run_bag_step() {
     # Strip gs:// to handle literal copy-paste from GCS UI
     local bag_clean=${bag#gs://}
 
-    echo " RUNNING BAG EXTRACTION: $bag_clean"
+    echo " RUNNING BAG EXTRACTION (Local Code): $bag_clean"
     docker run --rm \
       --entrypoint /bin/bash \
       -v ~/.config/gcloud:/root/.config/gcloud \
       -v "$HOME/git/subdron-utils/subdron_utils:/usr/local/lib/python3.8/dist-packages/subdron_utils" \
+      -v "$HOME/git/subdron_camera_transformation:/app" \
+      -w /app \
       --env-file ../subdron_camera_transformation/.env.dev \
       -e DATABASE_URL="$DB_URL" \
       -e BASE_UPLOAD_DIR="$BASE_UPLOAD_DIR" \
       -e CLOUD_BUCKET_NAME="$BUCKET_NAME" \
       -e GOOGLE_APPLICATION_CREDENTIALS=/root/.config/gcloud/application_default_credentials.json \
       "$image" \
-      -c "source /opt/ros/noetic/setup.bash && source /catkin_ws/devel/setup.bash && python main.py -i $bag_clean --extract-images --post-process --upload-results --create-video --video-fps 30"
+      -c "source /opt/ros/noetic/setup.bash && source /catkin_ws/devel/setup.bash && python3 main.py -i $bag_clean --extract-images --post-process --upload-results --create-video --video-fps 30"
 }
 
 run_image_step() {
@@ -144,11 +148,13 @@ run_image_step() {
     local img_dir_clean=${img_dir#gs://}
     local out_dir="${img_dir_clean/\/image_pose_pairs/\/enhanced\/PHASEFORMER}"
 
-    echo " RUNNING IMAGE ENHANCEMENT: $img_dir_clean"
+    echo " RUNNING IMAGE ENHANCEMENT (Local Code): $img_dir_clean"
     docker run --rm --gpus all \
       --entrypoint /bin/bash \
       -v ~/.config/gcloud:/root/.config/gcloud \
       -v "$HOME/git/subdron-utils/subdron_utils:/opt/venv/lib/python3.9/site-packages/subdron_utils" \
+      -v "$HOME/git/subdron_image_processing:/app" \
+      -w /app \
       --env-file ../subdron_image_processing/.env.dev \
       -e DATABASE_URL="$DB_URL" \
       -e GOOGLE_APPLICATION_CREDENTIALS=/root/.config/gcloud/application_default_credentials.json \
@@ -156,7 +162,7 @@ run_image_step() {
       -e BASE_UPLOAD_DIR="$BASE_UPLOAD_DIR" \
       -e CLOUD_BUCKET_NAME="$BUCKET_NAME" \
       "$image" \
-      -c "python -u main.py PHASEFORMER --download ${img_dir_clean} --upload ${out_dir} --batch_size 8 --upload_every 512 --resume --create-video --video-fps 30"
+      -c "python3 -u main.py PHASEFORMER --download ${img_dir_clean} --upload ${out_dir} --batch_size 8 --upload_every 512 --resume --create-video --video-fps 30"
 }
 
 run_colmap_step() {
