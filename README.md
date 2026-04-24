@@ -123,8 +123,6 @@ The `scripts/test_local_pipeline.sh` script is a critical tool for developers. I
 - [x] **GCP Batch Integration**: Orchestrated processing via scalable Batch jobs.
 - [x] **Marker-based Triggering**: Automated sequencing using GCS completion markers.
 - [x] **Environment Separation**: Distinct workflows for `dev` and `prod`.
-- [x] **GPU Acceleration**: NVIDIA T4 support for PHASEFORMER.
-- [x] **Configurable FPS**: Support for `--video-fps` across all video-generating stages.
 - [ ] **Label Studio Integration**: Triggering the pipeline directly from Label Studio for annotated data.
 - [ ] **Remove Marker Dependency**: Move towards a more robust orchestration (e.g., Cloud Workflows or Pub/Sub) to remove dependency on marker files in storage.
 - [ ] **Real-time Monitoring Dashboard**: Centralized view of all running and historical batch jobs.
