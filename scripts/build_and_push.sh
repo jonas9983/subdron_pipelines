@@ -5,7 +5,7 @@ set -e
 # Map repository folder names to their specific push script paths
 declare -A REPO_SCRIPTS
 REPO_SCRIPTS=(
-    ["subdron_camera_transformation"]="../subdron_camera_transformation/scripts/push_to_registry.sh"
+    ["subdron_camera_transformation"]="../subdron_camera_transformation/shell_scripts/push_to_registry.sh"
     ["subdron_image_processing"]="../subdron_image_processing/shell_scripts/push_to_registry.sh"
     ["subdron_colmap"]="../subdron_colmap/shell_scripts/push_to_registry.sh"
 )
