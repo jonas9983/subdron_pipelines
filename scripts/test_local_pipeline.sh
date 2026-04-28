@@ -11,12 +11,19 @@ COLMAP_POSES_PREFIX=""
 BUILD_FIRST=false
 BASE_UPLOAD_DIR="tests" # Default to tests directory for local pipeline
 
+# Detect the base git directory (parent of this repo)
+# Allows overriding via GIT_ROOT environment variable
+DEFAULT_GIT_ROOT=$(cd "$(dirname "$0")/../.." && pwd)
+GIT_ROOT="${GIT_ROOT:-$DEFAULT_GIT_ROOT}"
+
+echo " Using GIT_ROOT: $GIT_ROOT"
+
 # Map steps to their local repository directories
 declare -A REPO_DIRS
 REPO_DIRS=(
-    ["bag"]="../subdron_camera_transformation"
-    ["image"]="../subdron_image_processing"
-    ["colmap"]="../subdron_colmap"
+    ["bag"]="$GIT_ROOT/subdron_camera_transformation"
+    ["image"]="$GIT_ROOT/subdron_image_processing"
+    ["colmap"]="$GIT_ROOT/subdron_colmap"
 )
 
 # Map steps to their registry image names
@@ -127,8 +134,8 @@ run_bag_step() {
     docker run --rm \
       --entrypoint /bin/bash \
       -v ~/.config/gcloud:/root/.config/gcloud \
-      -v "$HOME/git/subdron-utils/subdron_utils:/usr/local/lib/python3.8/dist-packages/subdron_utils" \
-      -v "$HOME/git/subdron_camera_transformation:/app" \
+      -v "$GIT_ROOT/subdron-utils/subdron_utils:/usr/local/lib/python3.8/dist-packages/subdron_utils" \
+      -v "$GIT_ROOT/subdron_camera_transformation:/app" \
       -w /app \
       --env-file ../subdron_camera_transformation/.env.dev \
       -e DATABASE_URL="$DB_URL" \
@@ -152,8 +159,8 @@ run_image_step() {
     docker run --rm --gpus all \
       --entrypoint /bin/bash \
       -v ~/.config/gcloud:/root/.config/gcloud \
-      -v "$HOME/git/subdron-utils/subdron_utils:/opt/venv/lib/python3.9/site-packages/subdron_utils" \
-      -v "$HOME/git/subdron_image_processing:/app" \
+      -v "$GIT_ROOT/subdron-utils/subdron_utils:/opt/venv/lib/python3.9/site-packages/subdron_utils" \
+      -v "$GIT_ROOT/subdron_image_processing:/app" \
       -w /app \
       --env-file ../subdron_image_processing/.env.dev \
       -e DATABASE_URL="$DB_URL" \
@@ -185,8 +192,8 @@ run_colmap_step() {
     docker run --rm --gpus all \
       --entrypoint /bin/bash \
       -v ~/.config/gcloud:/root/.config/gcloud \
-      -v "$HOME/git/subdron-utils/subdron_utils:/opt/venv/lib/python3.10/site-packages/subdron_utils" \
-      -v "$HOME/git/subdron_colmap:/app" \
+      -v "$GIT_ROOT/subdron-utils/subdron_utils:/opt/venv/lib/python3.10/site-packages/subdron_utils" \
+      -v "$GIT_ROOT/subdron_colmap:/app" \
       -w /app \
       --env-file ../subdron_colmap/.env.dev \
       -e DATABASE_URL="$DB_URL" \
