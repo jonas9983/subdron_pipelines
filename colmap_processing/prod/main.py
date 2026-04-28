@@ -79,11 +79,12 @@ def process_colmap_prod(event, context):
             timestamp=timestamp,
             method=method,
             strategy=strategy,
-            tag=tag_to_use
+            tag=tag_to_use,
+            bucket_name=bucket_name
         )
 
 def create_colmap_job(images_prefix, poses_prefix, use_checkpoint, image_range, 
-                      mission_id, timestamp, method, strategy, tag):
+                      mission_id, timestamp, method, strategy, tag, bucket_name):
     client = batch_v1.BatchServiceClient()
     job = batch_v1.Job()
     job.task_groups = [batch_v1.TaskGroup()]
@@ -122,9 +123,16 @@ def create_colmap_job(images_prefix, poses_prefix, use_checkpoint, image_range,
     runnable.environment = batch_v1.Environment()
     runnable.environment.variables = {
         "ENV": "prod",
+        "PIPELINE_ENV": "production",
         "MISSION_ID": mission_id,
         "TIMESTAMP": timestamp,
+        "CLOUD_BUCKET_NAME": bucket_name,
         "BASE_UPLOAD_DIR": os.getenv("BASE_UPLOAD_DIR", "data")
+    }
+    
+    # Inject Database Secret
+    runnable.environment.secret_variables = {
+        "DATABASE_URL": "projects/eighth-saga-468413-c9/secrets/DB_URL/versions/latest"
     }
     
     job.task_groups[0].task_spec = batch_v1.TaskSpec()
