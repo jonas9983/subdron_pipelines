@@ -95,28 +95,59 @@ The `scripts/test_local_pipeline.sh` script is a critical tool for developers. I
 
 ## 6. Operations Guide
 
+### Deployment Overview
+
+The pipeline supports two primary environments: **Development** and **Production**. Deployment is orchestrated through a unified `deploy.sh` script that manages the lifecycle of both Docker images and Cloud Functions.
+
+#### Development vs. Production
+
+| Feature | Development (`dev`) | Production (`prod`) |
+| :--- | :--- | :--- |
+| **GCP Region** | `europe-west1` | `europe-west1` |
+| **Bucket** | `subdron_dev` | `subdron_dev` (using `/data` prefix) |
+| **Tags** | Flexible (e.g., `dev`, `feature-x`, `test-123`) | Strict (e.g., `production` or semantic version `v1.2.0`) |
+| **Isolation** | Test data in `/tests/` prefix | Real data in `/data/` prefix |
+| **Purpose** | Testing new code, algorithms, and configurations. | Stable, verified mission processing. |
+
 ### Recommended Workflow
 
-1.  **Local Verification**: Test your changes locally using Docker before pushing to the cloud. This ensures your code works with actual cloud data without waiting for the full event-driven trigger chain.
-    ```bash
-    ./scripts/test_local_pipeline.sh --step full --sample
-    ```
-
-2.  **Deployment**: Use the unified deployment script to build, push, and deploy for both dev and prod.
+1.  **Local Verification**: Always test your changes locally using `scripts/test_local_pipeline.sh` before deploying to the cloud.
+2.  **Deployment**: Run the main deployment orchestrator:
     ```bash
     ./deploy.sh
     ```
+    The script will interactively guide you through:
+    - **Environment Selection**: Choose between `dev` and `prod`.
+    - **Service Selection**: Choose to deploy `all` services or specific ones (`bag`, `img`, `colmap`).
+    - **Build/Push**: Decide whether to rebuild and push Docker images to Artifact Registry.
+    - **Tagging**: Specify the Docker tags to use (individual tags for dev, or a single release tag for prod).
 
-3.  **Verification**: Verify by uploading a file to the corresponding bucket and checking the logs in Google Cloud Console.
+3.  **Verification**: After deployment, verify by:
+    - Checking the Cloud Functions console for successful deployment.
+    - Uploading a sample file to GCS and monitoring the logs in **Cloud Logging**.
 
 ### Script Reference
 
-| Script | Description |
-| :--- | :--- |
-| `deploy.sh` | **Primary Entry Point**. Orchestrates building, pushing, and deploying. |
-| `scripts/build_and_push.sh` | Orchestrates Docker builds and pushes for all sub-repos. |
-| `scripts/deploy_dev.sh` | Deploys Cloud Functions to the `dev` environment. |
-| `scripts/deploy_prod.sh` | Deploys Cloud Functions to the `production` environment. |
+#### `deploy.sh` (Interactive Orchestrator)
+This is the **primary entry point** for all deployments. It wraps the lower-level scripts to ensure consistency.
+
+#### `scripts/build_and_push.sh`
+Used for Docker image management.
+- `--step <bag|image|colmap>`: (Optional) Build only a specific service.
+- `--tag <tag>`: (Optional) Specify the Docker tag (default: `latest` or `dev`).
+
+#### `scripts/deploy_dev.sh`
+Directly deploys Cloud Functions to the dev environment.
+- `--bag-tag <tag>`: Tag for the Bag Extractor container.
+- `--img-tag <tag>`: Tag for the Image Processing container.
+- `--colmap-tag <tag>`: Tag for the Colmap Processing container.
+- `--bucket <name>`: Override the trigger bucket (default: `subdron_dev`).
+- `--skip <bag|img|colmap>`: Skip specific services during deployment.
+
+#### `scripts/deploy_prod.sh`
+Directly deploys Cloud Functions to the production environment.
+- `--tag <tag>`: Mandatory. A single tag used for all production services (e.g., `production`).
+- `--skip <bag|img|colmap>`: Skip specific services during deployment.
 
 ## 7. Pipeline Roadmap
 
