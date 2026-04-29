@@ -25,7 +25,6 @@ pipelines:
           clone: { depth: full }
           script:
             - *setup-git-identity
-            - *clone-cicd
             - chmod +x ./cicd/*.sh
 
             - |
@@ -45,7 +44,6 @@ pipelines:
           clone: { depth: full }
           script:
             - *setup-git-identity
-            - *clone-cicd
             - chmod +x ./cicd/*.sh
             - NEW_V=$(./cicd/generate-tag.sh -t "master" -s "development")
             - ./cicd/release.sh --tag "$NEW_V"
