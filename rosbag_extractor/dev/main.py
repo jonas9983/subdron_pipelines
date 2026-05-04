@@ -11,11 +11,12 @@ def process_bag_file_dev(event, context):
     if not file_name.endswith('.bag'):
         return
     
-    if '/03_Logs/test_bags/' not in file_name:
+    if 'tests/' not in file_name:
+        print(f"Ignoring non-test bag in dev: {file_name}")
         return
     
     # Dynamically determine the base directory (tests or data)
-    base_dir = "tests" if file_name.startswith("tests/") else "data"
+    base_dir = "tests" if 'tests/' in file_name else "data"
     
     storage_client = storage.Client()
     bucket = storage_client.bucket(bucket_name)

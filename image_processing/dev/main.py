@@ -13,7 +13,7 @@ def process_images_dev(event, context):
         return
     
     # Ensure we only process files in the tests/ directory for dev
-    if not file_name.startswith('tests/'):
+    if 'tests/' not in file_name:
         print(f"Skipping non-test marker: {file_name}")
         return
     
