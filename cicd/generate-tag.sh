@@ -64,11 +64,11 @@ elif [[ "$TARGET_BRANCH" == "test-branch" ]]; then
     SUFFIX=".test"
 fi
 
-if [[ "$TARGET_BRANCH" == "master" ]]; then
-    PREFIX="uv"
-else
-    PREFIX="v"
+if [[ "$TARGET_BRANCH" == "development" ]]; then
+    SUFFIX="-dev"
 fi
+
+PREFIX="v"
 
 NEW_TAG="${PREFIX}${MAJOR}.${MINOR}.${PATCH}${SUFFIX}"
 

@@ -37,14 +37,25 @@ done
 echo " Preparing PRODUCTION Pipeline Deployment..."
 
 # --- Gather missing configuration only if not provided ---
+# --- Gather missing configuration only if not provided ---
 if [ -z "$TRIGGER_BUCKET" ]; then
-    read -p "Enter the PRODUCTION Trigger Bucket name [default: subdron]: " INPUT_BUCKET
-    TRIGGER_BUCKET="${INPUT_BUCKET:-subdron}"
+    if [ -t 0 ]; then
+        read -p "Enter the PRODUCTION Trigger Bucket name [default: subdron]: " INPUT_BUCKET
+        TRIGGER_BUCKET="${INPUT_BUCKET:-subdron}"
+    else
+        TRIGGER_BUCKET="subdron"
+        echo "Non-interactive shell detected. Using default bucket: $TRIGGER_BUCKET"
+    fi
 fi
 
 if [ -z "$RELEASE_TAG" ]; then
-    read -p "Enter the RELEASE TAG for all services [default: production]: " INPUT_TAG
-    RELEASE_TAG="${INPUT_TAG:-production}"
+    if [ -t 0 ]; then
+        read -p "Enter the RELEASE TAG for all services [default: production]: " INPUT_TAG
+        RELEASE_TAG="${INPUT_TAG:-production}"
+    else
+        RELEASE_TAG="production"
+        echo "Non-interactive shell detected. Using default release tag: $RELEASE_TAG"
+    fi
 fi
 
 echo " Trigger Bucket: $TRIGGER_BUCKET"

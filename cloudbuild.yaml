@@ -1,0 +1,29 @@
+options:
+  logging: CLOUD_LOGGING_ONLY
+
+steps:
+  # Deploy to Dev if tag matches v*-dev
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        if [[ "$TAG_NAME" == v*-dev ]]; then
+          echo "Starting Dev Deployment for tag $TAG_NAME"
+          chmod +x ./scripts/deploy_dev.sh
+          # Using 'latest' for all services in dev environment
+          ./scripts/deploy_dev.sh --bag-tag latest --img-tag latest --colmap-tag latest --bucket subdron_dev
+        fi
+
+  # Deploy to Production if tag matches v* (and NOT -dev)
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        if [[ "$TAG_NAME" == v* && "$TAG_NAME" != *-dev ]]; then
+          echo "Starting Production Deployment for tag $TAG_NAME"
+          chmod +x ./scripts/deploy_prod.sh
+          # Using 'production' alias for all services in prod environment
+          ./scripts/deploy_prod.sh --tag production --bucket subdron
+        fi
