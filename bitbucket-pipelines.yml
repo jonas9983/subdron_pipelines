@@ -2,10 +2,23 @@ definitions:
   setup-git-identity: &setup-git-identity |
     git config --global user.email "pipelines@subdron.com"
     git config --global user.name "Bitbucket Pipeline"
-    ssh -o StrictHostKeyChecking=no git@bitbucket.org || true
+    ssh -o StrictHostKeyChecking=no git@bitbucket.org || true 
 
 pipelines:
   branches:
+
+    test-branch:
+      - step:
+          name: Test Auto-Tagging Logic
+          clone: { depth: full }
+          script:
+            - *setup-git-identity
+            - chmod +x ./cicd/*.sh
+            - SOURCE_BR="feature/CD-217-explore-automatic-builds-to-regis"
+            - echo "Simulating source branch as $SOURCE_BR"
+            - NEW_V=$(./cicd/generate-tag.sh -t "test-branch" -s "$SOURCE_BR")
+            - ./cicd/release.sh --tag "$NEW_V"
+
     development:
       - step:
           name: Auto-Tag Development
