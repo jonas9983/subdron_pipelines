@@ -93,67 +93,64 @@ The `scripts/test_local_pipeline.sh` script is a critical tool for developers. I
 
 ---
 
-## 6. Operations Guide
+## 6. CI/CD & Automation
+
+The pipeline uses an automated CI/CD flow using **Bitbucket Pipelines** and **Google Cloud Build**.
+
+### Tagging Convention (The "Safety Wall")
+
+To ensure strict isolation between environments, the pipeline follows this tagging strategy:
+
+| Environment | Branch | Git Tag | Image Alias |
+| :--- | :--- | :--- | :--- |
+| **Development** | `development` | `vX.Y.Z-dev` | `:latest` |
+| **Production** | `master` | `vX.Y.Z` | `:production` |
+
+### Automated Workflow
+
+1.  **Merge to `development`**: Automatically tags the repo as `vX.Y.Z-dev`. Cloud Build then deploys the Dev Cloud Functions, which are configured to pull service images with the `:latest` tag.
+2.  **Merge to `master`**: Automatically tags the repo as `vX.Y.Z`. Cloud Build then deploys the Production Cloud Functions, which are configured to pull service images with the `:production` tag.
+
+### Recommended Workflow Order
+
+1.  **Service Repos First**: Merge changes in `subdron_colmap`, `subdron_image_processing`, or `subdron_camera_transformation`. This updates the `:latest` or `:production` image alias in the registry.
+2.  **Pipeline Repo Last**: Merge `subdron_pipelines` to update the Cloud Function trigger logic if necessary.
+
+**Note**: If you only fix a bug in a service (e.g., COLMAP), you only need to push that service repository. The existing Dev Cloud Functions already point to the `:latest` tag and will automatically pull your new code on their next run.
+
+---
+
+## 7. Operations Guide
 
 ### Deployment Overview
 
-The pipeline supports two primary environments: **Development** and **Production**. Deployment is orchestrated through a unified `deploy.sh` script that manages the lifecycle of both Docker images and Cloud Functions.
+While the pipeline is **fully automated via Bitbucket**, it's still possible to use manual scripts for emergency overrides or specific testing.
 
 #### Development vs. Production
 
 | Feature | Development (`dev`) | Production (`prod`) |
 | :--- | :--- | :--- |
 | **GCP Region** | `europe-west1` | `europe-west1` |
-| **Bucket** | `subdron_dev` | `subdron_dev` (using `/data` prefix) |
-| **Tags** | Flexible (e.g., `dev`, `feature-x`, `test-123`) | Strict (e.g., `production` or semantic version `v1.2.0`) |
-| **Isolation** | Test data in `/tests/` prefix | Real data in `/data/` prefix |
-| **Purpose** | Testing new code, algorithms, and configurations. | Stable, verified mission processing. |
+| **Bucket** | `subdron_dev` | `subdron` |
+| **Image Tags** | `:latest` (automated) | `:production` (automated) |
+| **Git Tags** | `v*-dev` | `v*` |
+| **Isolation** | Test data in `/tests/` | Real data in `/data/` |
 
-### Recommended Workflow
-
-1.  **Local Verification**: Always test your changes locally using `scripts/test_local_pipeline.sh` before deploying to the cloud.
-2.  **Deployment**: Run the main deployment orchestrator:
-    ```bash
-    ./deploy.sh
-    ```
-    The script will interactively guide you through:
-    - **Environment Selection**: Choose between `dev` and `prod`.
-    - **Service Selection**: Choose to deploy `all` services or specific ones (`bag`, `img`, `colmap`).
-    - **Build/Push**: Decide whether to rebuild and push Docker images to Artifact Registry.
-    - **Tagging**: Specify the Docker tags to use (individual tags for dev, or a single release tag for prod).
-
-3.  **Verification**: After deployment, verify by:
-    - Checking the Cloud Functions console for successful deployment.
-    - Uploading a sample file to GCS and monitoring the logs in **Cloud Logging**.
-
-### Script Reference
+### Manual Script Reference
 
 #### `deploy.sh` (Interactive Orchestrator)
-This is the **primary entry point** for all deployments. It wraps the lower-level scripts to ensure consistency.
+The primary entry point for manual deployments. It guides you through environment selection and service selection.
 
-#### `scripts/build_and_push.sh`
-Used for Docker image management.
-- `--step <bag|image|colmap>`: (Optional) Build only a specific service.
-- `--tag <tag>`: (Optional) Specify the Docker tag (default: `latest` or `dev`).
+#### `scripts/deploy_dev.sh` / `scripts/deploy_prod.sh`
+Used by Cloud Build to perform the actual `gcloud` deployment. These scripts are now "CI-aware" and will use default tags (`latest`/`production`) if run in a non-interactive environment.
 
-#### `scripts/deploy_dev.sh`
-Directly deploys Cloud Functions to the dev environment.
-- `--bag-tag <tag>`: Tag for the Bag Extractor container.
-- `--img-tag <tag>`: Tag for the Image Processing container.
-- `--colmap-tag <tag>`: Tag for the Colmap Processing container.
-- `--bucket <name>`: Override the trigger bucket (default: `subdron_dev`).
-- `--skip <bag|img|colmap>`: Skip specific services during deployment.
+---
 
-#### `scripts/deploy_prod.sh`
-Directly deploys Cloud Functions to the production environment.
-- `--tag <tag>`: Mandatory. A single tag used for all production services (e.g., `production`).
-- `--skip <bag|img|colmap>`: Skip specific services during deployment.
-
-## 7. Pipeline Roadmap
+## 8. Pipeline Roadmap
 
 - [x] **GCP Batch Integration**: Orchestrated processing via scalable Batch jobs.
-- [x] **Marker-based Triggering**: Automated sequencing using GCS completion markers.
-- [x] **Environment Separation**: Distinct workflows for `dev` and `prod`.
+- [x] **CI/CD Automation**: Automated tagging and deployment via Bitbucket & Cloud Build.
+- [x] **Safety Wall**: Environment isolation using `:latest` and `:production` tag aliases.
 - [ ] **Label Studio Integration**: Triggering the pipeline directly from Label Studio for annotated data.
-- [ ] **Remove Marker Dependency**: Move towards a more robust orchestration (e.g., Cloud Workflows or Pub/Sub) to remove dependency on marker files in storage.
+- [ ] **Remove Marker Dependency**: Move towards Cloud Workflows or Pub/Sub to remove dependency on marker files.
 - [ ] **Real-time Monitoring Dashboard**: Centralized view of all running and historical batch jobs.

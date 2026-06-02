@@ -26,14 +26,12 @@ pipelines:
           script:
             - *setup-git-identity
             - chmod +x ./cicd/*.sh
-
             - |
               if [ -z "$BITBUCKET_SOURCE_BRANCH" ]; then
                 SOURCE_BR=$(git log -1 --pretty=%B | grep -o 'Merged in .*' | sed 's/Merged in //' || echo "unknown")
               else
                 SOURCE_BR=$BITBUCKET_SOURCE_BRANCH
               fi
-
             - echo "Detected source branch as $SOURCE_BR"
             - NEW_V=$(./cicd/generate-tag.sh -t "development" -s "$SOURCE_BR")
             - ./cicd/release.sh --tag "$NEW_V" --target-branch "development"

@@ -47,34 +47,55 @@ done
 echo " Preparing DEV Pipeline Deployment..."
 
 # --- Gather missing configuration only if not provided ---
+# --- Gather missing configuration only if not provided ---
 if [ -z "$TRIGGER_BUCKET" ]; then
-    read -p "Enter the Trigger Bucket name [default: subdron_dev]: " INPUT_BUCKET
-    TRIGGER_BUCKET="${INPUT_BUCKET:-subdron_dev}"
+    if [ -t 0 ]; then
+        read -p "Enter the Trigger Bucket name [default: subdron_dev]: " INPUT_BUCKET
+        TRIGGER_BUCKET="${INPUT_BUCKET:-subdron_dev}"
+    else
+        TRIGGER_BUCKET="subdron_dev"
+        echo "Non-interactive shell detected. Using default bucket: $TRIGGER_BUCKET"
+    fi
 fi
 
 echo " Trigger Bucket: $TRIGGER_BUCKET"
 
 if [ "$SKIP_BAG" = false ] && [ -z "$BAG_TAG" ]; then
-    read -p "Enter the tag for Bag Extractor (process_bag_file_dev): " BAG_TAG
-    if [ -z "$BAG_TAG" ]; then
-        echo "ERROR: Bag tag cannot be empty."
-        exit 1
+    if [ -t 0 ]; then
+        read -p "Enter the tag for Bag Extractor (process_bag_file_dev): " BAG_TAG
+        if [ -z "$BAG_TAG" ]; then
+            echo "ERROR: Bag tag cannot be empty."
+            exit 1
+        fi
+    else
+        BAG_TAG="latest"
+        echo "Non-interactive shell detected. Using default Bag tag: $BAG_TAG"
     fi
 fi
 
 if [ "$SKIP_IMG" = false ] && [ -z "$IMG_TAG" ]; then
-    read -p "Enter the tag for Image Processing Service (process_images_dev): " IMG_TAG
-    if [ -z "$IMG_TAG" ]; then
-        echo "ERROR: Image processing tag cannot be empty."
-        exit 1
+    if [ -t 0 ]; then
+        read -p "Enter the tag for Image Processing Service (process_images_dev): " IMG_TAG
+        if [ -z "$IMG_TAG" ]; then
+            echo "ERROR: Image processing tag cannot be empty."
+            exit 1
+        fi
+    else
+        IMG_TAG="latest"
+        echo "Non-interactive shell detected. Using default Image tag: $IMG_TAG"
     fi
 fi
 
 if [ "$SKIP_COLMAP" = false ] && [ -z "$COLMAP_TAG" ]; then
-    read -p "Enter the tag for Colmap Service (process_colmap_dev): " COLMAP_TAG
-    if [ -z "$COLMAP_TAG" ]; then
-        echo "ERROR: Colmap tag cannot be empty."
-        exit 1
+    if [ -t 0 ]; then
+        read -p "Enter the tag for Colmap Service (process_colmap_dev): " COLMAP_TAG
+        if [ -z "$COLMAP_TAG" ]; then
+            echo "ERROR: Colmap tag cannot be empty."
+            exit 1
+        fi
+    else
+        COLMAP_TAG="latest"
+        echo "Non-interactive shell detected. Using default Colmap tag: $COLMAP_TAG"
     fi
 fi
 

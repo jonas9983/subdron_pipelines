@@ -12,7 +12,8 @@ def process_bag_file_prod(event, context):
         return
     
     # Ignore test bags in production
-    if '/03_Logs/test_bags/' in file_name:
+    if file_name.startswith('tests/') or '/tests/' in file_name:
+        print(f"Ignoring test bag in production: {file_name}")
         return
     
     # Dynamically determine the base directory (tests or data)

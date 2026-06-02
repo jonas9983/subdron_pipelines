@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.1] - 2026-06-02
+
+### Added
+- **CI/CD Automation**: Implemented automated environment-based tagging and deployment support.
+  - Added `bitbucket-pipelines.yml` to automatically generate version tags when merging to `development` (`v*-dev`) and `master` (`v*`).
+  - Added `cloudbuild.yaml` configuration to trigger development or production deployments based on the generated git tags.
+
+### Changed
+- **Triggers**: Updated trigger configurations for production batch jobs.
+
 ## [1.0.0] - 2026-04-23
 
 ### Added
