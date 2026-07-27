@@ -1,4 +1,4 @@
-# Image processing pipeline without connection to Google Cloud and database.
+# Vision pipeline without connection to Google Cloud and database.
 
 #!/bin/bash
 set -e
@@ -11,15 +11,15 @@ IMAGE_DIR=""
 ENHANCED_DIR=""
 POSES_PATH=""
 BUILD_FIRST=false  
-BASE_UPLOAD_DIR="tests" # Default to tests directory for local pipeline
 
-
-CSV_FILE="pipeline_timings.csv"
+SAVE_METRICS=false
+CSV_FILE="offline_pipeline_metrics.csv"
 BAG_TIME=""
 IMAGE_TIME=""
 COLMAP_TIME=""
 TOTAL_TIME=""
 IMAGE_COUNT=""
+BAG_SIZE_MB=""
 
 # Detect the base git directory (parent of this repo)
 # Allows overriding via GIT_ROOT environment variable
@@ -54,12 +54,7 @@ while [[ "$#" -gt 0 ]]; do
         --enhanced-dir) ENHANCED_DIR="$2"; shift 2 ;;
         --poses-path) POSES_PATH="$2"; shift 2 ;;
         --build) BUILD_FIRST=true; shift 1 ;;
-        --base-dir) BASE_UPLOAD_DIR="$2"; shift 2 ;;
-        --sample) 
-            BAG_PATH="subdron_dev/tests/sparus2-25/P1063/03_Logs/test_bags/P1063_2026-03-10-10-54-33.bag"
-            STEP="full"
-            shift 1
-            ;;
+        --save-metrics) SAVE_METRICS=true; shift 1 ;;
         *) echo "Unknown parameter: $1"; exit 1 ;;
     esac
 done
@@ -68,7 +63,7 @@ done
 if [ "$STEP" == "img" ]; then STEP="image"; fi
 
 if [ -z "$STEP" ] && [ -z "$BAG_PATH" ]; then
-    echo "Usage: ./test_offline_pipeline.sh --step [bag|image|colmap|full] [-i bag_path] [--sample]"
+    echo "Usage: ./run_offline_pipeline.sh --step [bag|image|colmap|full] [-i bag_path] [--save-metrics]"
     exit 1
 fi
 
@@ -97,9 +92,6 @@ run_bag_step() {
     local bag=$1
     local tag=$2
     local image="subdron-rosbag-extractor:${tag}"
-    
-    # Strip gs:// to handle literal copy-paste from GCS UI
-    #local bag_clean=${bag#gs://}
 
     echo " RUNNING BAG EXTRACTION (Local Code): $bag"
     docker run --rm \
@@ -112,7 +104,6 @@ run_bag_step() {
       -w /app \
       --env-file ../subdron_camera_transformation/.env.dev \
       -e DATABASE_URL="$DB_URL" \
-      -e BASE_UPLOAD_DIR="$BASE_UPLOAD_DIR" \
       -e CLOUD_BUCKET_NAME="$BUCKET_NAME" \
       -e GOOGLE_APPLICATION_CREDENTIALS=/root/.config/gcloud/application_default_credentials.json \
       "$image" \
@@ -137,7 +128,6 @@ run_image_step() {
       -e OFFLINE_MODE=true \
       -e DISABLE_DB=true \
       -e ENV=dev -e PIPELINE_ENV=dev \
-      -e BASE_UPLOAD_DIR="$BASE_UPLOAD_DIR" \
       "$image" \
       -c "python3 -u main.py PHASEFORMER --input_dir ${img_dir} --batch_size 8 --resume --create-video --video-fps 30 --keep_input"
 }
@@ -147,16 +137,6 @@ run_colmap_step() {
     local poses_file=$2
     local tag=$3
     local image="subdron-colmap:${tag}"
-
-    # Strip gs:// from all inputs
-    #local img_dir_clean=${img_dir#gs://}
-    #local poses_file_clean=${poses_file#gs://}
-
-    #local enhanced_dir=$ENHANCED_DIR
-    #if [ -z "$enhanced_dir" ]; then
-    #    enhanced_dir="${img_dir_clean/\/image_pose_pairs/\/enhanced\/PHASEFORMER}"
-    #fi
-    #enhanced_dir=${enhanced_dir#gs://}
 
     echo " RUNNING COLMAP RECONSTRUCTION (Local Code): $enhanced_dir"
     #docker run --rm --gpus all \
@@ -171,7 +151,6 @@ run_colmap_step() {
       --env-file ../subdron_colmap/.env.dev \
       -e GOOGLE_APPLICATION_CREDENTIALS=/root/.config/gcloud/application_default_credentials.json \
       -e ENV=dev \
-      -e BASE_UPLOAD_DIR="$BASE_UPLOAD_DIR" \
       -e CLOUD_BUCKET_NAME="$BUCKET_NAME" \
       "$image" \
       -c "python3 -u main.py --images-prefix ${enhanced_dir} --poses-prefix ${poses_file} --dir-version PHASEFORMER_spatial --matching-strategy spatial --spatial-radius 5.0 --plane-mode single --feature-extractor sift"
@@ -182,7 +161,6 @@ parse_bag_metadata_docker() {
     local tag=${TAG:-latest}
     #local image="subdron-rosbag-extractor:${tag}"
     local image="subdron-rosbag-extractor:dev" # CHnage this after
-
 
     IFS='|' read -r SOURCE MISSION_ID TIMESTAMP < <(docker run --rm \
       --entrypoint /bin/bash \
@@ -295,7 +273,7 @@ case $STEP in
     image)
         # If IMAGE_DIR is not provided, try to detect it automatically from BAG_PATH
         if [ -z "$IMAGE_DIR" ] && [ -n "$BAG_PATH" ]; then
-            compute_image_dir_path "$BAG_PATH" 
+            compute_paths "$BAG_PATH" 
         fi
 
         if [ -z "$IMAGE_DIR" ]; then
@@ -388,10 +366,24 @@ TOTAL_TIME=$((PIPELINE_END - PIPELINE_START))
 
 echo "Total pipeline time: ${TOTAL_TIME} seconds."
 
-if [ ! -f "$CSV_FILE" ]; then
-    echo "timestamp,bag,bag_step,image_step,colmap_step,total, image_count" > "$CSV_FILE"
+if [ "$SAVE_METRICS" = true ]; then
+    # Calculate Bag Size in MB
+    REAL_BAG_PATH="$BAG_PATH"
+    if [ ! -f "$REAL_BAG_PATH" ] && [ -f "$GIT_ROOT/$BAG_PATH" ]; then
+        REAL_BAG_PATH="$GIT_ROOT/$BAG_PATH"
+    fi
+
+    if [ -n "$REAL_BAG_PATH" ] && [ -f "$REAL_BAG_PATH" ]; then
+        BAG_SIZE_MB=$(du -m --apparent-size "$REAL_BAG_PATH" | cut -f1)
+    else
+        BAG_SIZE_MB="N/A"
+    fi
+
+    if [ ! -f "$CSV_FILE" ]; then
+        echo "timestamp,bag,bag_step,image_step,colmap_step,total,image_count,bag_size_mb" > "$CSV_FILE"
+    fi
+
+    # Append metrics row
+    echo "$(date '+%Y-%m-%d %H:%M:%S'),$(basename "${BAG_PATH:-N/A}"),${BAG_TIME:-N/A},${IMAGE_TIME:-N/A},${COLMAP_TIME:-N/A},$TOTAL_TIME,${IMAGE_COUNT:-N/A},$BAG_SIZE_MB" >> "$CSV_FILE"
+    echo "Metrics saved to $CSV_FILE"
 fi
-
-echo "$(date '+%Y-%m-%d %H:%M:%S'),$(basename "$BAG_PATH"),$BAG_TIME,$IMAGE_TIME,$COLMAP_TIME,$TOTAL_TIME, $IMAGE_COUNT"  >> "$CSV_FILE"
-
-
