@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+
+## [1.1.0] - 2026-07-27
+
+### Added
+- **Offline local pipeline**: Added script `/scripts/run_offline_pipeline.sh` to run the full pipeline locally without Cloud or database dependencies.
+
+
 ## [1.0.1] - 2026-06-02
 
 ### Added

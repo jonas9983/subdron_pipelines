@@ -145,8 +145,65 @@ The primary entry point for manual deployments. It guides you through environmen
 Used by Cloud Build to perform the actual `gcloud` deployment. These scripts are now "CI-aware" and will use default tags (`latest`/`production`) if run in a non-interactive environment.
 
 ---
+## 8. Local Offline Pipeline
+Local pipeline without connection to the Cloud or database. 
+ 
 
-## 8. Pipeline Roadmap
+### 8.1. Prerequisites & Data Setup
+The `data/` directory must sit in the same parent directory as the repositories. 
+
+The pipeline automatically creates output directories, provided the input path contains the **robot name**, **mission ID**, and **ROS bag file**. 
+
+It is recommended that the data folder structure is similar to the Google Cloud Storage format, so the robot name, mission id and timestamp can be extracted and the output paths can be built smoothly. 
+An example: 
+
+```text
+parent_folder/
+├── data/
+│   └── {robot_name}/
+│       └── {mission_id}/
+│           └── 03_Logs/
+│               └── {bag_name}.bag
+├── subdron_camera_transformation/
+├── subdron_image_processing/
+└── subdron_colmap/
+...
+``` 
+### 8.2. Basic Usage
+To run the complete pipeline from start to end:
+
+```
+./scripts/run_offline_pipeline.sh --tag TAG --step full -i BAG_PATH  
+```
+
+Example: 
+
+```
+./scripts/run_offline_pipeline.sh --tag latest --step full -i data/sparus2-25/P1063/03_Logs/P1063_2026-03-10-10-54-33.bag
+``` 
+
+### 8.3. Arguments
+The arguments are the similar to the ones described in the section **5. Local Testing & Verification** of the README, **except** for the `--sample` and `--base-dir` arguments that were removed.
+
+This script also **tracks performance metrics**, which can be saved by using the `--save-metrics` flag.
+
+### 8.4. Outputs
+Depending on the execution, the script generates:
+
+* **Pipeline Data:** The processed data folders (extracted frames, enhanced images, and COLMAP 3D reconstructions) saved directly inside the target mission structure within `data/`.
+* **Execution Metrics (`offline_pipeline_metrics.csv`):** Generated only when `--save-metrics` is enabled. It records a CSV entry with the following fields:
+  * `timestamp`: Date and time of execution
+  * `bag`: Name of the input ROS bag file
+  * `bag_step`: Duration of ROS bag extraction (seconds)
+  * `image_step`: Duration of image enhancement (seconds)
+  * `colmap_step`: Duration of 3D reconstruction (seconds)
+  * `total`: Total pipeline execution time (seconds)
+  * `image_count`: Total number of processed images
+  * `bag_size_mb`: File size of the input ROS bag (MB)
+
+---
+
+## 9. Pipeline Roadmap
 
 - [x] **GCP Batch Integration**: Orchestrated processing via scalable Batch jobs.
 - [x] **CI/CD Automation**: Automated tagging and deployment via Bitbucket & Cloud Build.
