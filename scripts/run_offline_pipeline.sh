@@ -159,8 +159,7 @@ run_colmap_step() {
 parse_bag_metadata_docker() {
     local target_path=$1
     local tag=${TAG:-latest}
-    #local image="subdron-rosbag-extractor:${tag}"
-    local image="subdron-rosbag-extractor:dev" # CHnage this after
+    local image="subdron-rosbag-extractor:${tag}"
 
     IFS='|' read -r SOURCE MISSION_ID TIMESTAMP < <(docker run --rm \
       --entrypoint /bin/bash \
