@@ -11,10 +11,8 @@ def process_colmap_dev(event, context):
     if not file_name.endswith('ENHANCEMENT_COMPLETE.marker'):
         return
 
-    # DEV function should ONLY process markers that are in the tests/ directory
-    if 'tests/' not in file_name:
-        print(f"Skipping non-test marker: {file_name}")
-        return
+    # Dynamically determine the base directory (tests or data)
+    base_dir = "tests" if 'tests/' in file_name else "data"
 
     if '/02_Post_Mission/camera/' not in file_name:
         return
@@ -82,11 +80,12 @@ def process_colmap_dev(event, context):
             method=method,
             strategy=strategy,
             tag=tag_to_use,
-            bucket_name=bucket_name
+            bucket_name=bucket_name,
+            base_dir=base_dir
         )
 
-def create_colmap_job(images_prefix, poses_prefix, use_checkpoint, image_range, 
-                      mission_id, timestamp, method, strategy, tag, bucket_name):
+def create_colmap_job(images_prefix, poses_prefix, use_checkpoint, image_range,
+                      mission_id, timestamp, method, strategy, tag, bucket_name, base_dir):
     client = batch_v1.BatchServiceClient()
     job = batch_v1.Job()
     job.task_groups = [batch_v1.TaskGroup()]
@@ -129,7 +128,7 @@ def create_colmap_job(images_prefix, poses_prefix, use_checkpoint, image_range,
         "MISSION_ID": mission_id,
         "TIMESTAMP": timestamp,
         "CLOUD_BUCKET_NAME": bucket_name,
-        "BASE_UPLOAD_DIR": os.getenv("BASE_UPLOAD_DIR", "tests")
+        "BASE_UPLOAD_DIR": base_dir
     }
     
     # Inject Database Secret

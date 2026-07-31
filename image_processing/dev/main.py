@@ -12,11 +12,9 @@ def process_images_dev(event, context):
     if not file_name.endswith('EXTRACTION_COMPLETE.marker'):
         return
     
-    # Ensure we only process files in the tests/ directory for dev
-    if 'tests/' not in file_name:
-        print(f"Skipping non-test marker: {file_name}")
-        return
-    
+    # Dynamically determine the base directory (tests or data)
+    base_dir = "tests" if 'tests/' in file_name else "data"
+
     print(f"Processing completion marker: {file_name}")
     
     storage_client = storage.Client()
@@ -50,10 +48,11 @@ def process_images_dev(event, context):
             mission_id=mission_id,
             timestamp=timestamp,
             tag=tag_to_test,
-            bucket_name=bucket_name
+            bucket_name=bucket_name,
+            base_dir=base_dir
         )
 
-def create_image_processing_job(image_dir, method, mission_id, timestamp, tag, bucket_name):
+def create_image_processing_job(image_dir, method, mission_id, timestamp, tag, bucket_name, base_dir):
     client = batch_v1.BatchServiceClient()
     job = batch_v1.Job()
     job.task_groups = [batch_v1.TaskGroup()]
@@ -79,7 +78,7 @@ def create_image_processing_job(image_dir, method, mission_id, timestamp, tag, b
         "MISSION_ID": mission_id,
         "TIMESTAMP": timestamp,
         "CLOUD_BUCKET_NAME": bucket_name,
-        "BASE_UPLOAD_DIR": os.getenv("BASE_UPLOAD_DIR", "tests")
+        "BASE_UPLOAD_DIR": base_dir
     }
     
     # Inject Database Secret
