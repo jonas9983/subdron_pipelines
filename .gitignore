@@ -56,6 +56,3 @@ image-processing
 *.jpg
 holoocean
 sparus
-# terraform local artifacts
-.terraform/
-*.tfstate*

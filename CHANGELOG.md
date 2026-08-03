@@ -3,7 +3,13 @@
 All notable changes to this project will be documented in this file.
 
 
-## [1.2.0] - 2026-07-31
+## [1.1.2] - 2026-08-03
+
+### Changed
+- Aligned release tags with the changelog: seeded tag `v1.1.1` so auto-generated tags continue the 1.x series (next merge produces `v1.1.2-dev`).
+
+
+## [1.1.1] - 2026-07-31
 
 ### Changed
 - **Dev functions process all bucket paths**: `process_bag_file_dev`, `process_images_dev` and `process_colmap_dev` no longer ignore files outside `tests/`. The upload base dir (`tests` or `data`) is derived per file from the triggering object's path, so test runs and real mission data coexist on the same bucket.
