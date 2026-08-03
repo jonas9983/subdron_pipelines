@@ -11,10 +11,6 @@ def process_bag_file_dev(event, context):
     if not file_name.endswith('.bag'):
         return
     
-    if 'tests/' not in file_name:
-        print(f"Ignoring non-test bag in dev: {file_name}")
-        return
-    
     # Dynamically determine the base directory (tests or data)
     base_dir = "tests" if 'tests/' in file_name else "data"
     

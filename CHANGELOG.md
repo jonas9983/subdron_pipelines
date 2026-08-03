@@ -3,6 +3,26 @@
 All notable changes to this project will be documented in this file.
 
 
+## [1.1.2] - 2026-08-03
+
+### Changed
+- Aligned release tags with the changelog: seeded tag `v1.1.1` so auto-generated tags continue the 1.x series (next merge produces `v1.1.2-dev`).
+
+
+## [1.1.1] - 2026-07-31
+
+### Changed
+- **Dev functions process all bucket paths**: `process_bag_file_dev`, `process_images_dev` and `process_colmap_dev` no longer ignore files outside `tests/`. The upload base dir (`tests` or `data`) is derived per file from the triggering object's path, so test runs and real mission data coexist on the same bucket.
+- `deploy_dev.sh` no longer sets the obsolete `BASE_UPLOAD_DIR` environment variable on the functions.
+
+### Added
+- **Automatic dev deployment**: Cloud Build connection and `tag-trigger-pipelines` trigger — merging to `development` now redeploys the dev Cloud Functions automatically (`v*-dev` tag → `cloudbuild.yaml` → `deploy_dev.sh`). Production tags are intentionally not wired up yet.
+- `.gitignore` entries for local Terraform artifacts (`.terraform/`, state files).
+
+### Removed
+- Decommissioned the misconfigured "prod" Cloud Functions (`process_bag_file`, `process_images`, `process_colmap_prod`): they listened on the `subdron_dev` bucket with dev image tags. Prod redeployment against `subdron_prod` is planned separately.
+
+
 ## [1.1.0] - 2026-07-27
 
 ### Added
