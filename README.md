@@ -93,7 +93,39 @@ The `scripts/test_local_pipeline.sh` script is a critical tool for developers. I
 
 ---
 
-## 6. CI/CD & Automation
+## 6. Local Orchestrator (offline processing)
+
+For machines with no Google Cloud access, `local_orchestrator/` runs pipeline stages
+fully offline against a local data tree and a local Postgres for mission tracking
+(same `log_mission_stage` pathway the cloud services use).
+
+One-time setup (pyenv virtualenv `pipelines` — or `.venv` fallback — with subdron-utils
+pinned to a release tag, plus the tracking DB):
+
+```bash
+./scripts/setup_local_orchestrator.sh
+```
+
+Run bag extraction for a single bag (path relative to `DATA_ROOT`, default `<repo>/data`):
+
+```bash
+python local_orchestrator/run_extraction.py data/sparus2-25/P1063/03_Logs/P1063_2026-03-10-10-54-33.bag
+```
+
+The runner validates inputs and mounts before launching Docker, passes mission
+identity (`-m`, `-ts`) explicitly so parallel bags never collide, and records every
+run (image digest, versions, timings, exit code) in `DATA_ROOT/_state/jobs/<job_id>.json`
+with the full container log in `DATA_ROOT/_state/logs/`. Key flags: `--tag` (image tag,
+default `dev`), `--force` (re-run a completed job), `--dev-code` (bind-mount local
+checkouts for iterating), `--no-db` (skip tracking DB).
+
+Extraction videos are kept in the mission tree under
+`02_Post_Mission/camera/videos/<timestamp>/original/` (requires the offline video fix
+in `subdron_camera_transformation`).
+
+---
+
+## 7. CI/CD & Automation
 
 The pipeline uses an automated CI/CD flow using **Bitbucket Pipelines** and **Google Cloud Build**.
 

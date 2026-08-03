@@ -56,3 +56,8 @@ image-processing
 *.jpg
 holoocean
 sparus
+
+# Local orchestrator: machine-local data tree, state, and environments
+data/
+.venv/
+.python-version

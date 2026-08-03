@@ -1,0 +1,17 @@
+services:
+  mission-db:
+    image: postgres:16
+    container_name: subdron-mission-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: subdron
+      POSTGRES_PASSWORD: subdron_local
+      POSTGRES_DB: mission_data
+    ports:
+      - "5433:5432"
+    volumes:
+      - mission_db_data:/var/lib/postgresql/data
+      - ./init_db.sql:/docker-entrypoint-initdb.d/init_db.sql:ro
+
+volumes:
+  mission_db_data:
