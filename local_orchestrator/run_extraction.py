@@ -21,7 +21,13 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-import subdron_utils
+try:
+    import subdron_utils
+except ImportError:
+    sys.exit(
+        "[ERROR] subdron_utils is not installed in this Python environment.\n"
+        "        Run the one-time setup first:  ./scripts/setup_local_orchestrator.sh"
+    )
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 IMAGE_NAME = "subdron-rosbag-extractor"
