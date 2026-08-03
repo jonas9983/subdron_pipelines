@@ -34,14 +34,14 @@ assert hasattr(subdron_utils, 'get_mission_info'), 'get_mission_info missing —
 print('subdron_utils', version('subdron_utils'), 'OK')
 "
 
-echo "--- Starting local mission DB (postgres on :5433) ---"
+echo "--- Starting local mission DB (postgres on :${MISSION_DB_PORT:-5433}) ---"
 docker compose -f "$ORCH/docker-compose.yml" up -d
 until docker exec subdron-mission-db pg_isready -U subdron -d mission_data -q 2>/dev/null; do
     sleep 1
 done
 
 echo "--- Smoke-testing DB logging ---"
-DB_POSTGRES_HOST=localhost DB_POSTGRES_PORT=5433 \
+DB_POSTGRES_HOST=localhost DB_POSTGRES_PORT=${MISSION_DB_PORT:-5433} \
 DB_POSTGRES_USER=subdron DB_POSTGRES_PASSWORD=subdron_local \
 DB_POSTGRES_DB=mission_data PIPELINE_ENV=dev \
 "$PYBIN" -c "

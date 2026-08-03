@@ -9,6 +9,8 @@ mission tree under DATA_ROOT; a JSON job record is written to
 DATA_ROOT/_state/jobs/ and the full container log to DATA_ROOT/_state/logs/.
 """
 
+from __future__ import annotations
+
 import argparse
 import getpass
 import hashlib
@@ -38,7 +40,7 @@ DB_ENV = {
     "ENABLE_DB_LOGGING": "true",
     "PIPELINE_ENV": "dev",
     "DB_POSTGRES_HOST": "host.docker.internal",
-    "DB_POSTGRES_PORT": "5433",
+    "DB_POSTGRES_PORT": os.getenv("MISSION_DB_PORT", "5433"),
     "DB_POSTGRES_USER": "subdron",
     "DB_POSTGRES_PASSWORD": "subdron_local",
     "DB_POSTGRES_DB": "mission_data",

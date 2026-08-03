@@ -8,7 +8,7 @@ services:
       POSTGRES_PASSWORD: subdron_local
       POSTGRES_DB: mission_data
     ports:
-      - "5433:5432"
+      - "${MISSION_DB_PORT:-5433}:5432"
     volumes:
       - mission_db_data:/var/lib/postgresql/data
       - ./init_db.sql:/docker-entrypoint-initdb.d/init_db.sql:ro
