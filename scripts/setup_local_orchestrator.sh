@@ -9,8 +9,10 @@ ENV_NAME="pipelines"
 
 if command -v pyenv > /dev/null && pyenv virtualenv --version > /dev/null 2>&1; then
     if ! pyenv versions --bare | grep -qx ".*envs/$ENV_NAME\|$ENV_NAME"; then
-        echo "--- Creating pyenv virtualenv '$ENV_NAME' ---"
-        pyenv virtualenv "$ENV_NAME"
+        # Prefer the newest installed 3.10+ (google libs dropped 3.8/3.9)
+        PY_BASE=$(pyenv versions --bare | grep -E '^3\.1[0-9]+\.' | sort -V | tail -1)
+        echo "--- Creating pyenv virtualenv '$ENV_NAME' (base: ${PY_BASE:-global}) ---"
+        pyenv virtualenv ${PY_BASE:+"$PY_BASE"} "$ENV_NAME"
     fi
     (cd "$REPO_ROOT" && pyenv local "$ENV_NAME")
     PYBIN=$(PYENV_VERSION="$ENV_NAME" pyenv which python)

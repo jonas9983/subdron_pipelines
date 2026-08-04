@@ -2,6 +2,12 @@
 
 from __future__ import annotations
 
+import warnings
+
+# Google libs nag about EOL Python on every import; not actionable here.
+warnings.filterwarnings("ignore", category=FutureWarning, module="google.*")
+warnings.filterwarnings("ignore", message=".*Python 3.8.*")
+
 import fcntl
 import json
 import os

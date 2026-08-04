@@ -63,7 +63,10 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--data-root", help="Data root (default: $DATA_ROOT or <repo>/data)")
     parser.add_argument("--dry-run", action="store_true", help="Report decisions without launching anything")
-    parser.add_argument("--dev-code", action="store_true", help="Pass --dev-code to every runner")
+    parser.add_argument("--dev-code", nargs="*", choices=["extraction", "phaseformer", "colmap"],
+                        default=None, metavar="STAGE",
+                        help="Run stages from local checkouts: bare flag = all stages, "
+                             "or name specific ones (e.g. --dev-code extraction)")
     args = parser.parse_args()
 
     data_root = resolve_data_root(args.data_root)
@@ -79,7 +82,12 @@ def main() -> None:
         print("Another trigger pass is running — skipping.")
         return
 
-    extra = ["--dev-code"] if args.dev_code else []
+    dev_stages = (["extraction", "phaseformer", "colmap"] if args.dev_code == []
+                  else (args.dev_code or []))
+
+    def stage_extra(stage: str) -> list[str]:
+        return ["--dev-code"] if stage in dev_stages else []
+
     bags = find_bags(data_root)
     print(f"Trigger pass: {len(bags)} bag(s) under {data_root}")
 
@@ -97,7 +105,7 @@ def main() -> None:
         status = record_status(jobs_dir, job_id)
         if status is None:
             print(f"[{job_id}] new bag -> extraction")
-            run_stage("run_extraction.py", str(bag), extra, args.dry_run)
+            run_stage("run_extraction.py", str(bag), stage_extra("extraction"), args.dry_run)
             continue
         if status in ("failed", "running"):
             print(f"[{job_id}] extraction {status}"
@@ -122,7 +130,7 @@ def main() -> None:
             print(f"[{job_id}] approved -> phaseformer ({len(ranges)} range(s))")
             ok = True
             for i, r in enumerate(ranges):
-                range_args = extra + (["--image-range", r] if r else [])
+                range_args = stage_extra("phaseformer") + (["--image-range", r] if r else [])
                 if i > 0:
                     range_args += ["--force"]  # later ranges resume into the same output
                 ok = run_stage("run_phaseformer.py", str(input_dir), range_args, args.dry_run) and ok
@@ -137,7 +145,7 @@ def main() -> None:
         if cm_status is None:
             enhanced = mission_dir / "camera" / timestamp / "enhanced" / "PHASEFORMER"
             print(f"[{job_id}] enhanced -> colmap")
-            run_stage("run_colmap.py", str(enhanced), extra, args.dry_run)
+            run_stage("run_colmap.py", str(enhanced), stage_extra("colmap"), args.dry_run)
         elif cm_status == "done":
             print(f"[{job_id}] complete")
         else:
