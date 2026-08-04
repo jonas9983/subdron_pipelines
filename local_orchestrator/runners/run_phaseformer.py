@@ -14,8 +14,11 @@ from __future__ import annotations
 
 import argparse
 import subprocess
-import sys
 
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from pipeline_helpers import (
     CONTAINER_DATA,
     REPO_ROOT,
@@ -50,6 +53,7 @@ def main() -> None:
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--video-fps", type=int, default=30)
     parser.add_argument("--device", choices=["gpu", "cpu"], default="gpu")
+    parser.add_argument("--image-range", help="Only process images in range start:end[:step]")
     parser.add_argument("--force", action="store_true", help="Re-run a completed job")
     parser.add_argument("--dev-code", action="store_true",
                         help="Bind-mount local stage + utils checkouts over the image code")
@@ -120,6 +124,7 @@ def main() -> None:
         "--batch_size", str(args.batch_size),
         "--device", args.device,
         "--resume", "--keep_input",
+        *(["--image-range", args.image_range] if args.image_range else []),
         "--create-video", "--video-fps", str(args.video_fps),
     ]
 

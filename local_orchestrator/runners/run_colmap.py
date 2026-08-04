@@ -17,8 +17,11 @@ from __future__ import annotations
 import argparse
 import shutil
 import subprocess
-import sys
 
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from pipeline_helpers import (
     CONTAINER_DATA,
     DB_ENV,

@@ -1,0 +1,16 @@
+# Install (adjust paths for the machine, then):
+#   sudo cp local_orchestrator/trigger/systemd/subdron-pipeline-trigger.* /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now subdron-pipeline-trigger.timer
+# Watch it:  journalctl -u subdron-pipeline-trigger -f
+[Unit]
+Description=Subdron local pipeline trigger (one pass)
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=joao
+WorkingDirectory=/home/joao/Desktop/bitbucket/subdron_pipelines
+Environment=MISSION_DB_PORT=5434
+ExecStart=/home/joao/.pyenv/versions/pipelines/bin/python local_orchestrator/trigger/pipeline_trigger.py
