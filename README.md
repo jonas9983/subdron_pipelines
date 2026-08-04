@@ -106,22 +106,39 @@ pinned to a release tag, plus the tracking DB):
 ./scripts/setup_local_orchestrator.sh
 ```
 
-Run bag extraction for a single bag (path relative to `DATA_ROOT`, default `<repo>/data`):
+### Stage runners (`local_orchestrator/runners/`)
+
+One script per stage, one bag per invocation (paths relative to `DATA_ROOT`, default `<repo>/data`):
 
 ```bash
-python local_orchestrator/run_extraction.py data/sparus2-25/P1063/03_Logs/P1063_2026-03-10-10-54-33.bag
+python local_orchestrator/runners/run_extraction.py  data/sparus2-25/P1063/03_Logs/<bag>.bag
+python local_orchestrator/runners/run_phaseformer.py data/sparus2-25/P1063/02_Post_Mission/camera/<ts>/image_pose_pairs
+python local_orchestrator/runners/run_colmap.py      data/sparus2-25/P1063/02_Post_Mission/camera/<ts>/enhanced/PHASEFORMER
 ```
 
-The runner validates inputs and mounts before launching Docker, passes mission
-identity (`-m`, `-ts`) explicitly so parallel bags never collide, and records every
-run (image digest, versions, timings, exit code) in `DATA_ROOT/_state/jobs/<job_id>.json`
-with the full container log in `DATA_ROOT/_state/logs/`. Key flags: `--tag` (image tag,
-default `dev`), `--force` (re-run a completed job), `--dev-code` (bind-mount local
-checkouts for iterating), `--no-db` (skip tracking DB).
+Every runner validates inputs and mounts before launching Docker, writes a job record
+to `DATA_ROOT/_state/jobs/<job_id>.json` and the full container log to
+`DATA_ROOT/_state/logs/`. GPU stages share a lock so only one runs at a time.
+Common flags: `--tag` (image tag, default `dev`), `--force` (re-run a completed job),
+`--dev-code` (bind-mount local checkouts for iterating).
 
-Extraction videos are kept in the mission tree under
-`02_Post_Mission/camera/videos/<timestamp>/original/` (requires the offline video fix
-in `subdron_camera_transformation`).
+### Automation (`local_orchestrator/trigger/`)
+
+`pipeline_trigger.py` makes one pass over the data tree and launches each bag's next
+stage, reading state from the job records: new bag → extraction; extracted **and
+approved** → PHASEFORMER (per approved image range); enhanced → COLMAP. Failed jobs
+are reported, never auto-retried.
+
+The approval gate: after extraction, review the videos in
+`02_Post_Mission/camera/videos/<ts>/original/`, then record the decision:
+
+```bash
+python local_orchestrator/trigger/approve_bag_for_processing.py data/.../<bag>.bag --ranges 0:500 1400:2100
+# or: --reject
+```
+
+To run the trigger automatically every minute, install the systemd units from
+`local_orchestrator/trigger/systemd/` (edit paths/user in the .service first).
 
 ---
 
