@@ -42,7 +42,7 @@ except ImportError:
     )
 
 IMAGE_NAME = "subdron-image-processing"
-WEIGHTS_REL = "phaseformer/checkpoints/UIEB/best.pth"
+WEIGHTS_GS = "gs://subdron_dev/machine_learning/image_processing/weights/best.pth"
 
 
 def main() -> None:
@@ -89,6 +89,14 @@ def main() -> None:
     videos_dir.mkdir(parents=True, exist_ok=True)
 
     image = f"{IMAGE_NAME}:{args.tag}"
+    # Model weights live on the host and are mounted in, so the container
+    # never needs cloud credentials (its get_model() skips the GCS download).
+    models_dir = state_dir / "models" / "PHASEFORMER"
+    if not (models_dir / "best.pth").is_file():
+        fail(f"PHASEFORMER weights not found: {models_dir}/best.pth\n"
+             f"        One-time download (needs gcloud auth on any machine):\n"
+             f"        mkdir -p {models_dir} && gsutil cp {WEIGHTS_GS} {models_dir}/")
+
     if args.dev_code:
         stage_repo = REPO_ROOT.parent / "subdron_image_processing"
         workdir = "/app"
@@ -97,8 +105,6 @@ def main() -> None:
             (REPO_ROOT.parent / "subdron-utils" / "subdron_utils",
              "/opt/venv/lib/python3.9/site-packages/subdron_utils"),
         ]
-        if not (stage_repo / WEIGHTS_REL).is_file():
-            fail(f"PHASEFORMER weights missing in dev checkout: {stage_repo / WEIGHTS_REL}")
     else:
         workdir = "/image-processing"
         mounts = []
@@ -106,6 +112,7 @@ def main() -> None:
         (data_root, CONTAINER_DATA),
         (enhanced_parent, f"{workdir}/images"),
         (videos_dir, f"{workdir}/temp_videos"),
+        (models_dir, f"{workdir}/phaseformer/checkpoints/UIEB"),
     ]
     check_mounts(mounts)
     digest = image_digest(image)

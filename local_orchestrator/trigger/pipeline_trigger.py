@@ -45,6 +45,15 @@ def record_status(jobs_dir: Path, job_id: str) -> str | None:
     return json.loads(p.read_text()).get("status")
 
 
+def failure_hint(jobs_dir: Path, job_id: str) -> str:
+    """Last error line and log path from a failed job's record."""
+    record = json.loads((jobs_dir / f"{job_id}.json").read_text())
+    tail = (record.get("error_tail") or "").strip().splitlines()
+    last = next((ln for ln in reversed(tail) if ln.strip()), "(no output captured)")
+    log = record.get("outputs", {}).get("log", "?")
+    return f"\n      last output: {last}\n      full log:    {log}"
+
+
 def find_bags(data_root: Path) -> list[Path]:
     return [b for b in sorted(data_root.glob("*/*/03_Logs/*.bag"))
             if "transformed" not in b.parts]
@@ -108,8 +117,8 @@ def main() -> None:
             run_stage("run_extraction.py", str(bag), stage_extra("extraction"), args.dry_run)
             continue
         if status in ("failed", "running"):
-            print(f"[{job_id}] extraction {status}"
-                  + (" — fix and re-run with --force" if status == "failed" else ""))
+            hint = failure_hint(jobs_dir, job_id) if status == "failed" else ""
+            print(f"[{job_id}] extraction {status}{hint}")
             continue
 
         # Stage 2: human approval gate, then phaseformer
@@ -137,7 +146,8 @@ def main() -> None:
             if not ok or args.dry_run:
                 continue
         elif pf_status in ("failed", "running"):
-            print(f"[{job_id}] phaseformer {pf_status}")
+            hint = failure_hint(jobs_dir, f"{job_id}__phaseformer") if pf_status == "failed" else ""
+            print(f"[{job_id}] phaseformer {pf_status}{hint}")
             continue
 
         # Stage 3: colmap
@@ -149,7 +159,8 @@ def main() -> None:
         elif cm_status == "done":
             print(f"[{job_id}] complete")
         else:
-            print(f"[{job_id}] colmap {cm_status}")
+            hint = failure_hint(jobs_dir, f"{job_id}__colmap-spatial") if cm_status == "failed" else ""
+            print(f"[{job_id}] colmap {cm_status}{hint}")
 
 
 if __name__ == "__main__":
