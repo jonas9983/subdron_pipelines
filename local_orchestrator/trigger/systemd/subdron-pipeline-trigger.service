@@ -13,4 +13,4 @@ Type=oneshot
 User=joao
 WorkingDirectory=/home/joao/Desktop/bitbucket/subdron_pipelines
 Environment=MISSION_DB_PORT=5434
-ExecStart=/home/joao/.pyenv/versions/pipelines/bin/python local_orchestrator/trigger/pipeline_trigger.py
+ExecStart=/home/joao/.pyenv/versions/pipelines/bin/python local_orchestrator/trigger/pipeline_trigger.py --dev-code extraction

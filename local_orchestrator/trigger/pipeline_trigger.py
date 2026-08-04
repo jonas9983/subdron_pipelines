@@ -1,15 +1,14 @@
 #!/usr/bin/env python3
 """The pipeline trigger: one pass over DATA_ROOT, launching each bag's next stage.
 
-Level-triggered and marker-free — state comes from the job records the runners
-write (DATA_ROOT/_state/jobs/), never from filesystem events. For every bag
-under <source>/<mission>/03_Logs/*.bag:
+Level-triggered — state comes from the job records the runners
+write (DATA_ROOT/_state/jobs/). For every bag under <source>/<mission>/03_Logs/*.bag:
 
     no extraction record            -> runners/run_extraction.py
     extracted + approved, no enh.   -> runners/run_phaseformer.py (per approved range)
     enhanced, no colmap record      -> runners/run_colmap.py
 
-The approval gate is fed by approve_bag_for_processing.py. Failed jobs are
+The approval defined by approve_bag_for_processing.py. Failed jobs are
 reported but never retried automatically — re-run manually with --force.
 One job at a time; a lock prevents overlapping passes, so a systemd timer can
 invoke this at any interval.
