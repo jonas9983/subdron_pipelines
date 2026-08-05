@@ -59,41 +59,7 @@ The pipeline is event-driven and uses marker files to sequence processing stages
 - **Container Tags**: Defaults to `production`.
 - **Purpose**: Stable, finalized pipeline for mission data.
 
-## 5. Local Testing & Verification
-
-The `scripts/test_local_pipeline.sh` script is a critical tool for developers. It allows you to run specific stages (or the full pipeline) locally using Docker containers, but still interacting with cloud data.
-
-### Why use it?
-
-*   **Ignore Markers**: Unlike the Cloud Functions, which wait for `.marker` files, this script allows you to trigger a job on any data by providing the path directly.
-*   **Immediate Feedback**: See container logs in your terminal instantly.
-*   **Algorithm Tuning**: Test new container versions (via `--tag`) on real cloud data without deploying Cloud Functions.
-
-### Usage & Arguments
-
-```bash
-./scripts/test_local_pipeline.sh --step <step> [arguments]
-```
-
-| Argument | Description |
-| :--- | :--- |
-| `--step` | The pipeline stage to run: `bag`, `image`, `colmap`, or `full`. |
-| `-i`, `--input` | GCS Path to the ROS bag (e.g., `gs://bucket/tests/robot/mission/.../file.bag`). |
-| `-d`, `--image-dir` | GCS path where images are/will be stored. |
-| `--tag` | The Docker tag to use for the container (default: `local-test`). |
-| `--build` | Build the Docker image locally from source before running. |
-| `--colmap-poses-prefix` | **Required for colmap step**. GCS path to the navigation CSV file. |
-| `--sample` | Runs a predefined full pipeline test on sample data.<br>• `mission_id`: `P1063`<br>• `timestamp`: `2026-03-10-10-54-33` |
-
-### Example: Test Image Enhancement Only
-
-```bash
-./scripts/test_local_pipeline.sh --step image -d gs://my-bucket/tests/ROB01/MISS01/camera/TS/image_pose_pairs
-```
-
----
-
-## 6. Local Orchestrator (offline processing)
+## 5. Local Orchestrator (offline processing)
 
 For machines with no Google Cloud access, `local_orchestrator/` runs pipeline stages
 fully offline against a local data tree and a local Postgres for mission tracking
@@ -161,29 +127,23 @@ python local_orchestrator/trigger/pipeline_trigger.py --dry-run   # status of ev
 
 The trigger is a **system** service: it runs as one account regardless of who is
 logged in, and any user can check it (`systemctl status subdron-pipeline-trigger.timer`).
-To let several users review/approve and read logs:
+Each user, from their own clone:
 
 ```bash
-# journal access for another user
-sudo usermod -aG systemd-journal <user>
-
-# shared data root with group-writable state (one-time)
-sudo groupadd subdron
-sudo usermod -aG subdron <each user>
-sudo mkdir -p /srv/subdron/data
-sudo chown -R <service-user>:subdron /srv/subdron
-sudo chmod -R 2775 /srv/subdron          # setgid: new files inherit the group
-setfacl -R -d -m g::rwx /srv/subdron     # new files stay group-writable
+sudo usermod -aG docker,systemd-journal $USER   # container runs + journal access; log out/in
+./scripts/setup_local_orchestrator.sh --data-root /srv/subdron/data
 ```
 
-Then every user (and the systemd unit) sets `DATA_ROOT=/srv/subdron/data`. Code is
-per-user: each account clones the repo and runs `setup_local_orchestrator.sh` for its
-own pyenv env; only the data/state tree is shared. Users who run stages manually also
-need the `docker` group.
+The setup script does the rest: on the machine's first run it creates the
+`subdron` group and the group-writable shared data root (asks for sudo once);
+after that it joins the user to the group, reuses the already-running mission
+DB (port auto-detected), and writes the `DATA_ROOT`/`MISSION_DB_PORT` exports
+to `~/.bashrc`. Code is per-user; only the data directory is shared — and the
+trigger already runs machine-wide, so there is nothing to start.
 
 ---
 
-## 7. CI/CD & Automation
+## 6. CI/CD & Automation
 
 The pipeline uses an automated CI/CD flow using **Bitbucket Pipelines** and **Google Cloud Build**.
 
@@ -235,65 +195,8 @@ The primary entry point for manual deployments. It guides you through environmen
 Used by Cloud Build to perform the actual `gcloud` deployment. These scripts are now "CI-aware" and will use default tags (`latest`/`production`) if run in a non-interactive environment.
 
 ---
-## 8. Local Offline Pipeline
-Local pipeline without connection to the Cloud or database. 
- 
 
-### 8.1. Prerequisites & Data Setup
-The `data/` directory must sit in the same parent directory as the repositories. 
-
-The pipeline automatically creates output directories, provided the input path contains the **robot name**, **mission ID**, and **ROS bag file**. 
-
-It is recommended that the data folder structure is similar to the Google Cloud Storage format, so the robot name, mission id and timestamp can be extracted and the output paths can be built smoothly. 
-An example: 
-
-```text
-parent_folder/
-├── data/
-│   └── {robot_name}/
-│       └── {mission_id}/
-│           └── 03_Logs/
-│               └── {bag_name}.bag
-├── subdron_camera_transformation/
-├── subdron_image_processing/
-└── subdron_colmap/
-...
-``` 
-### 8.2. Basic Usage
-To run the complete pipeline from start to end:
-
-```
-./scripts/run_offline_pipeline.sh --tag TAG --step full -i BAG_PATH  
-```
-
-Example: 
-
-```
-./scripts/run_offline_pipeline.sh --tag latest --step full -i data/sparus2-25/P1063/03_Logs/P1063_2026-03-10-10-54-33.bag
-``` 
-
-### 8.3. Arguments
-The arguments are the similar to the ones described in the section **5. Local Testing & Verification** of the README, **except** for the `--sample` and `--base-dir` arguments that were removed.
-
-This script also **tracks performance metrics**, which can be saved by using the `--save-metrics` flag.
-
-### 8.4. Outputs
-Depending on the execution, the script generates:
-
-* **Pipeline Data:** The processed data folders (extracted frames, enhanced images, and COLMAP 3D reconstructions) saved directly inside the target mission structure within `data/`.
-* **Execution Metrics (`offline_pipeline_metrics.csv`):** Generated only when `--save-metrics` is enabled. It records a CSV entry with the following fields:
-  * `timestamp`: Date and time of execution
-  * `bag`: Name of the input ROS bag file
-  * `bag_step`: Duration of ROS bag extraction (seconds)
-  * `image_step`: Duration of image enhancement (seconds)
-  * `colmap_step`: Duration of 3D reconstruction (seconds)
-  * `total`: Total pipeline execution time (seconds)
-  * `image_count`: Total number of processed images
-  * `bag_size_mb`: File size of the input ROS bag (MB)
-
----
-
-## 9. Pipeline Roadmap
+## 8. Pipeline Roadmap
 
 - [x] **GCP Batch Integration**: Orchestrated processing via scalable Batch jobs.
 - [x] **CI/CD Automation**: Automated tagging and deployment via Bitbucket & Cloud Build.

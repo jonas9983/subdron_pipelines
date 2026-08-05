@@ -23,8 +23,14 @@ All notable changes to this project will be documented in this file.
   - Local mission-tracking Postgres via `docker-compose.yml` + `init_db.sql`
     (containers log through the same `log_mission_stage` pathway as the cloud;
     host port configurable via `MISSION_DB_PORT`).
-  - `scripts/setup_local_orchestrator.sh` — one-time setup: pyenv virtualenv
-    (subdron-utils pinned to tag `v1.5.2-dev`, never `latest`), tracking DB, smoke test.
+  - `scripts/setup_local_orchestrator.sh` — per-user setup: pyenv virtualenv
+    (subdron-utils pinned to tag `v1.5.2-dev`, never `latest`), tracking DB (reused if
+    already running, port auto-detected), smoke test. `--data-root` creates the shared
+    group-writable data root on a machine's first run (sudo) and writes the
+    `DATA_ROOT`/`MISSION_DB_PORT` exports to `~/.bashrc`.
+  - `scripts/update_local_images.sh` + `local_orchestrator/images.env` — stage image
+    versions pinned in one file; the script pulls them and points the local `:dev`
+    aliases at them.
   - PHASEFORMER model weights are hosted at `DATA_ROOT/_state/models/` and mounted
     into the container, so offline machines need no cloud credentials at runtime.
 
@@ -32,6 +38,13 @@ All notable changes to this project will be documented in this file.
 - `.gitignore`: local data tree, virtualenvs and `.python-version` are ignored.
 - README: new "Local Orchestrator" section documenting setup, runners, the approval
   workflow, the trigger, and multi-user operation.
+- Runners throttle container progress bars to one line per 10% when stdout is not a
+  terminal (keeps journald readable); the per-job log file still gets everything.
+
+### Removed
+- `scripts/run_offline_pipeline.sh` and `scripts/test_local_pipeline.sh` — superseded
+  by the local orchestrator runners and trigger (offline) and by running the stage
+  images directly (cloud-data testing).
 
 
 ## [1.1.2] - 2026-08-03

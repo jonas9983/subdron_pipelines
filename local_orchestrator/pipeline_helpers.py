@@ -11,6 +11,7 @@ warnings.filterwarnings("ignore", message=".*Python 3.8.*")
 import fcntl
 import json
 import os
+import re
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -145,12 +146,24 @@ def run_job(record: dict, cmd: list[str], record_path: Path, log_path: Path) -> 
 
     start = datetime.now(timezone.utc)
     tail: list[str] = []
+    # Progress bars (tqdm) flood non-interactive logs (journald): when stdout is
+    # not a tty, echo them only every 10%. The log file always gets everything.
+    progress_re = re.compile(r"(\d+)%\|")
+    echo_bars = sys.stdout.isatty()
+    last_pct = -1
     with log_path.open("w") as log_file:
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
                                 stderr=subprocess.STDOUT, text=True)
         for line in proc.stdout:
             log_file.write(line)
-            sys.stdout.write(line)
+            m = progress_re.search(line)
+            if m and not echo_bars:
+                pct = int(m.group(1))
+                if pct // 10 > last_pct // 10 or pct == 100 and last_pct != 100:
+                    sys.stdout.write(line)
+                    last_pct = pct
+            else:
+                sys.stdout.write(line)
             tail.append(line)
             if len(tail) > 50:
                 tail.pop(0)
