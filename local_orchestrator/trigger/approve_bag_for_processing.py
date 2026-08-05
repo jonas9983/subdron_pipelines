@@ -40,7 +40,7 @@ def main() -> None:
     parser.add_argument("--ranges", nargs="+", default=None,
                         help="Image ranges start:end[:step] (default: all images)")
     parser.add_argument("--reject", action="store_true", help="Mark as not worth GPU processing")
-    parser.add_argument("--data-root", help="Data root (default: $DATA_ROOT or <repo>/data)")
+    parser.add_argument("--data-root", help="Data root (default: /srv/subdron/data; $DATA_ROOT overrides)")
     args = parser.parse_args()
 
     for r in args.ranges or []:

@@ -52,7 +52,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("enhanced_dir", help="enhanced/PHASEFORMER dir (absolute, or relative to DATA_ROOT)")
     parser.add_argument("--poses", help="Poses CSV (default: navigation_not_converted.csv from the mission tree)")
-    parser.add_argument("--data-root", help="Data root (default: $DATA_ROOT or <repo>/data)")
+    parser.add_argument("--data-root", help="Data root (default: /srv/subdron/data; $DATA_ROOT overrides)")
     parser.add_argument("--tag", default="dev", help="Image tag (default: dev)")
     parser.add_argument("--matching-strategy", choices=["sequential", "exhaustive", "spatial"], default="spatial")
     parser.add_argument("--spatial-radius", type=float, default=5.0)

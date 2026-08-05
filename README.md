@@ -5,7 +5,7 @@ This repository orchestrates the end-to-end processing pipeline for underwater i
 
 ## 1. Prerequisites
 
-Before setting up the pipeline, ensure you meet the following requirements:
+Before setting up the pipeline, the following requirements must be met:
 
 *   **Directory Structure**: All related repositories (`subdron_camera_transformation`, `subdron_image_processing`, `subdron_colmap`, and `subdron-utils`) must be located in the same parent directory as this repository for the local scripts and build processes to work.
 *   **Google Cloud SDK**: `gcloud` authenticated and configured to the correct project.
@@ -62,11 +62,13 @@ The pipeline is event-driven and uses marker files to sequence processing stages
 ## 5. Local Orchestrator (offline processing)
 
 For machines with no Google Cloud access, `local_orchestrator/` runs pipeline stages
-fully offline against a local data tree and a local Postgres for mission tracking
-(same `log_mission_stage` pathway the cloud services use).
+fully offline against a shared local data tree at **`/srv/subdron/data`** and a local
+Postgres for mission tracking (same `log_mission_stage` pathway the cloud services use).
 
-One-time setup (pyenv virtualenv `pipelines` — or `.venv` fallback — with subdron-utils
-pinned to a release tag, plus the tracking DB):
+One-time setup per user — creates the shared data root on the machine's first run
+(sudo), joins the required groups, builds the pyenv virtualenv `pipelines` (or `.venv`
+fallback) with subdron-utils pinned to a release tag, and starts (or adopts) the
+tracking DB:
 
 ```bash
 ./scripts/setup_local_orchestrator.sh
@@ -74,12 +76,12 @@ pinned to a release tag, plus the tracking DB):
 
 ### Stage runners (`local_orchestrator/runners/`)
 
-One script per stage, one bag per invocation (paths relative to `DATA_ROOT`, default `<repo>/data`):
+One script per stage, one bag per invocation:
 
 ```bash
-python local_orchestrator/runners/run_extraction.py  data/sparus2-25/P1063/03_Logs/<bag>.bag
-python local_orchestrator/runners/run_phaseformer.py data/sparus2-25/P1063/02_Post_Mission/camera/<ts>/image_pose_pairs
-python local_orchestrator/runners/run_colmap.py      data/sparus2-25/P1063/02_Post_Mission/camera/<ts>/enhanced/PHASEFORMER
+python local_orchestrator/runners/run_extraction.py  /srv/subdron/data/sparus2-25/P1063/03_Logs/<bag>.bag
+python local_orchestrator/runners/run_phaseformer.py /srv/subdron/data/sparus2-25/P1063/02_Post_Mission/camera/<ts>/image_pose_pairs
+python local_orchestrator/runners/run_colmap.py      /srv/subdron/data/sparus2-25/P1063/02_Post_Mission/camera/<ts>/enhanced/PHASEFORMER
 ```
 
 Every runner validates inputs and mounts before launching Docker, writes a job record
@@ -99,7 +101,7 @@ The approval gate: after extraction, review the videos in
 `02_Post_Mission/camera/videos/<ts>/original/`, then record the decision:
 
 ```bash
-python local_orchestrator/trigger/approve_bag_for_processing.py data/.../<bag>.bag --ranges 0:500 1400:2100
+python local_orchestrator/trigger/approve_bag_for_processing.py /srv/subdron/data/sparus2-25/P1063/03_Logs/<bag>.bag --ranges 0:500 1400:2100
 # or: --reject
 ```
 
@@ -117,29 +119,22 @@ python local_orchestrator/trigger/pipeline_trigger.py --dry-run   # status of ev
 
 | What | How |
 | :--- | :--- |
-| Data root | `DATA_ROOT` env (default `<repo>/data`). Bags go in `data/<source>/<mission>/03_Logs/*.bag`. |
-| Tracking DB port | `MISSION_DB_PORT` (default 5433). Export both in `~/.bashrc`; the systemd unit carries its own copies. |
+| Data root | `/srv/subdron/data` (the `DATA_ROOT` env variable overrides it for special cases). Bags go in `/srv/subdron/data/<robot>/<mission>/03_Logs/*.bag`. |
+| Tracking DB port | Default 5433. `MISSION_DB_PORT` is only needed when the DB runs on another port — the setup script detects this and writes the export to `~/.bashrc`. |
 | Docker images | Versions are pinned in `local_orchestrator/images.env` (edit + commit to upgrade). Apply on any machine with `./scripts/update_local_images.sh` — it pulls the pinned versions and points the local `:dev` aliases at them. Job records store the digest of every run. |
-| PHASEFORMER weights | One-time: `gcloud storage cp gs://subdron_dev/machine_learning/image_processing/weights/best.pth $DATA_ROOT/_state/models/PHASEFORMER/` (the runner prints this command if they are missing). |
+| PHASEFORMER weights | One-time: `gcloud storage cp gs://subdron_dev/machine_learning/image_processing/weights/best.pth /srv/subdron/data/_state/models/PHASEFORMER/` (the runner prints this command if the weights are missing). |
 | Failures | The trigger never retries. Fix the cause (see the log path it prints), then re-run the stage with `--force`. |
 
-### Multi-user operation (shared machine)
+### Multi-user operation
 
-The trigger is a **system** service: it runs as one account regardless of who is
-logged in, and any user can check it (`systemctl status subdron-pipeline-trigger.timer`).
-Each user, from their own clone:
-
-```bash
-sudo usermod -aG docker,systemd-journal $USER   # container runs + journal access; log out/in
-./scripts/setup_local_orchestrator.sh --data-root /srv/subdron/data
-```
-
-The setup script does the rest: on the machine's first run it creates the
-`subdron` group and the group-writable shared data root (asks for sudo once);
-after that it joins the user to the group, reuses the already-running mission
-DB (port auto-detected), and writes the `DATA_ROOT`/`MISSION_DB_PORT` exports
-to `~/.bashrc`. Code is per-user; only the data directory is shared — and the
-trigger already runs machine-wide, so there is nothing to start.
+The data root is shared and group-writable by design, so several users can work on
+the same machine from their own accounts. The trigger is a **system** service: it
+runs as one account regardless of who is logged in, and any user can check it
+(`systemctl status subdron-pipeline-trigger.timer`) or read its logs. Onboarding a
+new user is just `./scripts/setup_local_orchestrator.sh` from their own clone — the
+script joins the required groups (`subdron`, `docker`, `systemd-journal`) and reuses
+the machine's running DB. Code is per-user; only the data directory is shared, and
+the trigger already runs machine-wide, so there is nothing to start.
 
 ---
 
@@ -166,7 +161,7 @@ To ensure strict isolation between environments, the pipeline follows this taggi
 1.  **Service Repos First**: Merge changes in `subdron_colmap`, `subdron_image_processing`, or `subdron_camera_transformation`. This updates the `:latest` or `:production` image alias in the registry.
 2.  **Pipeline Repo Last**: Merge `subdron_pipelines` to update the Cloud Function trigger logic if necessary.
 
-**Note**: If you only fix a bug in a service (e.g., COLMAP), you only need to push that service repository. The existing Dev Cloud Functions already point to the `:latest` tag and will automatically pull your new code on their next run.
+**Note**: A bug fix limited to a single service (e.g., COLMAP) only requires pushing that service repository. The existing Dev Cloud Functions already point to the `:latest` tag and automatically pull the new code on their next run.
 
 ---
 
@@ -189,7 +184,7 @@ While the pipeline is **fully automated via Bitbucket**, it's still possible to 
 ### Manual Script Reference
 
 #### `deploy.sh` (Interactive Orchestrator)
-The primary entry point for manual deployments. It guides you through environment selection and service selection.
+The primary entry point for manual deployments. It provides interactive environment and service selection.
 
 #### `scripts/deploy_dev.sh` / `scripts/deploy_prod.sh`
 Used by Cloud Build to perform the actual `gcloud` deployment. These scripts are now "CI-aware" and will use default tags (`latest`/`production`) if run in a non-interactive environment.

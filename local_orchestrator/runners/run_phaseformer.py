@@ -48,7 +48,7 @@ WEIGHTS_GS = "gs://subdron_dev/machine_learning/image_processing/weights/best.pt
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("input_dir", help="image_pose_pairs dir (absolute, or relative to DATA_ROOT)")
-    parser.add_argument("--data-root", help="Data root (default: $DATA_ROOT or <repo>/data)")
+    parser.add_argument("--data-root", help="Data root (default: /srv/subdron/data; $DATA_ROOT overrides)")
     parser.add_argument("--tag", default="dev", help="Image tag (default: dev)")
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--video-fps", type=int, default=30)

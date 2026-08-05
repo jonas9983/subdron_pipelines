@@ -47,7 +47,7 @@ DISK_HEADROOM_FACTOR = 10
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("bag", help="Bag path (absolute, or relative to DATA_ROOT)")
-    parser.add_argument("--data-root", help="Data root (default: $DATA_ROOT or <repo>/data)")
+    parser.add_argument("--data-root", help="Data root (default: /srv/subdron/data; $DATA_ROOT overrides)")
     parser.add_argument("--tag", default="dev", help="Image tag (default: dev)")
     parser.add_argument("--video-fps", type=int, default=30)
     parser.add_argument("--force", action="store_true", help="Re-run a completed job")

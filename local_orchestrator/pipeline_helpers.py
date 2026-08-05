@@ -40,11 +40,14 @@ def utc_now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+DEFAULT_DATA_ROOT = "/srv/subdron/data"
+
+
 def resolve_data_root(cli_value: str | None) -> Path:
-    candidate = cli_value or os.getenv("DATA_ROOT") or str(REPO_ROOT / "data")
+    candidate = cli_value or os.getenv("DATA_ROOT") or DEFAULT_DATA_ROOT
     root = Path(candidate).resolve()
     if not root.is_dir():
-        fail(f"DATA_ROOT is not a directory: {root}")
+        fail(f"DATA_ROOT is not a directory: {root} — run ./scripts/setup_local_orchestrator.sh")
     if not any(root.iterdir()):
         fail(f"DATA_ROOT is empty: {root} (wrong machine layout?)")
     return root

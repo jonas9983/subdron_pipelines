@@ -1,37 +1,33 @@
 #!/bin/bash
-# One-time setup for the local orchestrator: python env + local tracking DB.
-# Uses pyenv-virtualenv when available (env name: pipelines), else falls back to .venv.
-# Safe to run as a second user on a machine that is already set up: the running
-# DB is adopted (not recreated) and its port auto-detected.
-#   --data-root PATH   also write DATA_ROOT/MISSION_DB_PORT exports to ~/.bashrc
+# Per-user setup for the local orchestrator: shared data root, python env,
+# local tracking DB. Idempotent — safe to re-run, and safe as a second user on
+# a machine that is already set up (the running DB is reused, not recreated).
+# The data root is fixed at /srv/subdron/data (override with $DATA_ROOT).
 set -e
 
 REPO_ROOT=$(cd "$(dirname "$0")/.." && pwd)
 ORCH="$REPO_ROOT/local_orchestrator"
 ENV_NAME="pipelines"
+DATA_ROOT="${DATA_ROOT:-/srv/subdron/data}"
 
-DATA_ROOT_ARG=""
-if [ "$1" = "--data-root" ]; then
-    DATA_ROOT_ARG="$2"
-    [ -n "$DATA_ROOT_ARG" ] || { echo "--data-root needs a path" >&2; exit 1; }
+# Shared data root: the machine's first run creates the group + group-writable
+# tree (needs sudo once); later runs just join the current user to the groups.
+if [ ! -d "$DATA_ROOT" ] || ! getent group subdron > /dev/null; then
+    echo "--- One-time shared data root setup: $DATA_ROOT (sudo) ---"
+    sudo groupadd -f subdron
+    sudo mkdir -p "$DATA_ROOT"
+    sudo chown -R "$USER:subdron" "$DATA_ROOT"
+    sudo chmod -R 2775 "$DATA_ROOT"              # setgid: new files inherit the group
+    sudo setfacl -R -d -m g::rwx "$DATA_ROOT"    # new files stay group-writable
 fi
-
-# Shared data root: first run on a machine creates the group + group-writable
-# tree (needs sudo once); later runs just join the current user to the group.
-if [ -n "$DATA_ROOT_ARG" ]; then
-    if [ ! -d "$DATA_ROOT_ARG" ] || ! getent group subdron > /dev/null; then
-        echo "--- One-time shared data root setup: $DATA_ROOT_ARG (sudo) ---"
-        sudo groupadd -f subdron
-        sudo mkdir -p "$DATA_ROOT_ARG"
-        sudo chown -R "$USER:subdron" "$DATA_ROOT_ARG"
-        sudo chmod -R 2775 "$DATA_ROOT_ARG"              # setgid: new files inherit the group
-        sudo setfacl -R -d -m g::rwx "$DATA_ROOT_ARG"    # new files stay group-writable
+NEW_GROUPS=""
+for g in subdron systemd-journal docker; do
+    if getent group "$g" > /dev/null && ! getent group "$g" | grep -qw "$USER"; then
+        echo "--- Adding $USER to group '$g' (sudo) ---"
+        sudo usermod -aG "$g" "$USER"
+        NEW_GROUPS="$NEW_GROUPS $g"
     fi
-    if ! getent group subdron | grep -qw "$USER"; then
-        echo "--- Adding $USER to group 'subdron' (sudo; takes effect after re-login) ---"
-        sudo usermod -aG subdron "$USER"
-    fi
-fi
+done
 
 if command -v pyenv > /dev/null && pyenv virtualenv --version > /dev/null 2>&1; then
     if ! pyenv versions --bare | grep -qx ".*envs/$ENV_NAME\|$ENV_NAME"; then
@@ -63,7 +59,7 @@ print('subdron_utils', version('subdron_utils'), 'OK')
 "
 
 if ! docker info > /dev/null 2>&1; then
-    echo "!!! No docker access — add the group and re-run:  sudo usermod -aG docker $USER  (then log out/in)" >&2
+    echo "!!! No docker access yet (group changes need a re-login) — log out/in and re-run this script." >&2
     exit 1
 fi
 
@@ -79,36 +75,26 @@ until docker exec subdron-mission-db pg_isready -U subdron -d mission_data -q 2>
     sleep 1
 done
 
-echo "--- Smoke-testing DB logging ---"
+echo "--- Checking DB logging ---"
 DB_POSTGRES_HOST=localhost DB_POSTGRES_PORT=$DB_PORT \
 DB_POSTGRES_USER=subdron DB_POSTGRES_PASSWORD=subdron_local \
 DB_POSTGRES_DB=mission_data PIPELINE_ENV=dev \
 "$PYBIN" -c "
 import subdron_utils
-subdron_utils.log_mission_stage(mission_id='SETUP_SMOKE_TEST', timestamp='2000-01-01-00-00-00', stage='SETUP', status='Done')
-"
+subdron_utils.log_mission_stage(mission_id='_db_check', timestamp='2000-01-01-00-00-00', stage='SETUP', status='Done')
+" > /dev/null
 docker exec subdron-mission-db psql -U subdron -d mission_data -tAc \
-    "DELETE FROM missions_test WHERE mission_id = 'SETUP_SMOKE_TEST';" > /dev/null
+    "DELETE FROM missions_test WHERE mission_id = '_db_check';" > /dev/null
+echo "    DB write OK"
 
-if [ -n "$DATA_ROOT_ARG" ]; then
-    echo "--- Writing exports to ~/.bashrc ---"
-    grep -q "^export DATA_ROOT=" ~/.bashrc 2>/dev/null \
-        || echo "export DATA_ROOT=$DATA_ROOT_ARG" >> ~/.bashrc
-    grep -q "^export MISSION_DB_PORT=" ~/.bashrc 2>/dev/null \
-        || echo "export MISSION_DB_PORT=$DB_PORT" >> ~/.bashrc
+# Only needed when the DB runs on a non-default port
+if [ "$DB_PORT" != "5433" ] && ! grep -q "^export MISSION_DB_PORT=" ~/.bashrc 2>/dev/null; then
+    echo "export MISSION_DB_PORT=$DB_PORT" >> ~/.bashrc
+    echo "--- Wrote MISSION_DB_PORT=$DB_PORT to ~/.bashrc (new terminals pick it up) ---"
 fi
-
-MISSING_GROUPS=""
-for g in subdron systemd-journal; do
-    getent group "$g" 2>/dev/null | grep -qw "$USER" || MISSING_GROUPS="$MISSING_GROUPS,$g"
-done
 
 echo ""
-echo "Setup complete. Run a bag with:"
-echo "  $RUN_PREFIX local_orchestrator/run_extraction.py <bag_path>"
-if [ -z "$DATA_ROOT_ARG" ]; then
-    echo "Shared machine? Re-run with:  $0 --data-root /srv/subdron/data"
-fi
-if [ -n "$MISSING_GROUPS" ]; then
-    echo "Missing groups (needed for shared data / journal access):  sudo usermod -aG ${MISSING_GROUPS#,} $USER"
-fi
+echo "Setup complete. Data root: $DATA_ROOT"
+[ -n "$NEW_GROUPS" ] && echo "Group changes ($NEW_GROUPS ) take effect after logging out and back in."
+echo "Bags dropped in $DATA_ROOT/<robot>/<mission>/03_Logs/ are processed automatically."
+echo "A stage can also be run manually, e.g.:  $RUN_PREFIX local_orchestrator/runners/run_extraction.py <bag_path>"

@@ -23,11 +23,15 @@ All notable changes to this project will be documented in this file.
   - Local mission-tracking Postgres via `docker-compose.yml` + `init_db.sql`
     (containers log through the same `log_mission_stage` pathway as the cloud;
     host port configurable via `MISSION_DB_PORT`).
-  - `scripts/setup_local_orchestrator.sh` — per-user setup: pyenv virtualenv
-    (subdron-utils pinned to tag `v1.5.2-dev`, never `latest`), tracking DB (reused if
-    already running, port auto-detected), smoke test. `--data-root` creates the shared
-    group-writable data root on a machine's first run (sudo) and writes the
-    `DATA_ROOT`/`MISSION_DB_PORT` exports to `~/.bashrc`.
+  - All tools use `/srv/subdron/data` as the data root (shared, group-writable — the
+    same layout on every machine, single- or multi-user); the `DATA_ROOT` env variable
+    overrides it for special cases.
+  - `scripts/setup_local_orchestrator.sh` — per-user setup: creates the shared data
+    root on the machine's first run (sudo) and joins the required groups
+    (`subdron`, `docker`, `systemd-journal`); pyenv virtualenv (subdron-utils pinned
+    to tag `v1.5.2-dev`, never `latest`); tracking DB (reused if already running,
+    port auto-detected — `MISSION_DB_PORT` exported to `~/.bashrc` only when
+    non-default).
   - `scripts/update_local_images.sh` + `local_orchestrator/images.env` — stage image
     versions pinned in one file; the script pulls them and points the local `:dev`
     aliases at them.

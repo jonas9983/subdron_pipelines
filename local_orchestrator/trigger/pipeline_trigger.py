@@ -69,7 +69,7 @@ def run_stage(runner: str, arg: str, extra: list[str], dry_run: bool) -> bool:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--data-root", help="Data root (default: $DATA_ROOT or <repo>/data)")
+    parser.add_argument("--data-root", help="Data root (default: /srv/subdron/data; $DATA_ROOT overrides)")
     parser.add_argument("--dry-run", action="store_true", help="Report decisions without launching anything")
     parser.add_argument("--dev-code", nargs="*", choices=["extraction", "phaseformer", "colmap"],
                         default=None, metavar="STAGE",
