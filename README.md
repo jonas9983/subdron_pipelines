@@ -153,7 +153,7 @@ python local_orchestrator/trigger/pipeline_trigger.py --dry-run   # status of ev
 | :--- | :--- |
 | Data root | `DATA_ROOT` env (default `<repo>/data`). Bags go in `data/<source>/<mission>/03_Logs/*.bag`. |
 | Tracking DB port | `MISSION_DB_PORT` (default 5433). Export both in `~/.bashrc`; the systemd unit carries its own copies. |
-| Docker images | Pull from Artifact Registry and retag locally, e.g. `docker pull europe-west1-docker.pkg.dev/.../subdron-colmap:1.4.0 && docker tag ... subdron-colmap:dev`. Prefer version tags over `latest`; job records store the digest of every run. |
+| Docker images | Versions are pinned in `local_orchestrator/images.env` (edit + commit to upgrade). Apply on any machine with `./scripts/update_local_images.sh` — it pulls the pinned versions and points the local `:dev` aliases at them. Job records store the digest of every run. |
 | PHASEFORMER weights | One-time: `gcloud storage cp gs://subdron_dev/machine_learning/image_processing/weights/best.pth $DATA_ROOT/_state/models/PHASEFORMER/` (the runner prints this command if they are missing). |
 | Failures | The trigger never retries. Fix the cause (see the log path it prints), then re-run the stage with `--force`. |
 
