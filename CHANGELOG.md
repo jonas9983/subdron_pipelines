@@ -3,6 +3,37 @@
 All notable changes to this project will be documented in this file.
 
 
+## [1.2.0] - 2026-08-05
+
+### Added
+- **Local orchestrator** (`local_orchestrator/`): fully offline mission processing on a
+  single Linux machine, mirroring the cloud pipeline stages.
+  - `runners/` — one CLI per stage (`run_extraction.py`, `run_phaseformer.py`,
+    `run_colmap.py`). Each validates inputs and bind-mount sources before launching
+    Docker, passes mission identity explicitly (parallel-safe outputs), writes a JSON
+    job record (`DATA_ROOT/_state/jobs/`, incl. image digest and timings) and the full
+    container log (`DATA_ROOT/_state/logs/`). GPU stages serialize on a shared lock.
+  - `trigger/pipeline_trigger.py` — level-triggered reconciliation pass (no marker
+    files): new bag → extraction; extracted **and human-approved** → PHASEFORMER (per
+    approved image range); enhanced → COLMAP. Failed jobs are reported with the last
+    error line, never auto-retried.
+  - `trigger/approve_bag_for_processing.py` — records the video-review decision
+    (approve/reject, optional frame ranges) that gates the GPU stages.
+  - `trigger/systemd/` — service + timer units to run the trigger every minute.
+  - Local mission-tracking Postgres via `docker-compose.yml` + `init_db.sql`
+    (containers log through the same `log_mission_stage` pathway as the cloud;
+    host port configurable via `MISSION_DB_PORT`).
+  - `scripts/setup_local_orchestrator.sh` — one-time setup: pyenv virtualenv
+    (subdron-utils pinned to tag `v1.5.2-dev`, never `latest`), tracking DB, smoke test.
+  - PHASEFORMER model weights are hosted at `DATA_ROOT/_state/models/` and mounted
+    into the container, so offline machines need no cloud credentials at runtime.
+
+### Changed
+- `.gitignore`: local data tree, virtualenvs and `.python-version` are ignored.
+- README: new "Local Orchestrator" section documenting setup, runners, the approval
+  workflow, the trigger, and multi-user operation.
+
+
 ## [1.1.2] - 2026-08-03
 
 ### Changed

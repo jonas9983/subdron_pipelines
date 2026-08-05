@@ -138,7 +138,48 @@ python local_orchestrator/trigger/approve_bag_for_processing.py data/.../<bag>.b
 ```
 
 To run the trigger automatically every minute, install the systemd units from
-`local_orchestrator/trigger/systemd/` (edit paths/user in the .service first).
+`local_orchestrator/trigger/systemd/` (edit paths/user in the .service first):
+
+```bash
+sudo cp local_orchestrator/trigger/systemd/subdron-pipeline-trigger.* /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now subdron-pipeline-trigger.timer
+journalctl -u subdron-pipeline-trigger -f          # watch trigger live
+python local_orchestrator/trigger/pipeline_trigger.py --dry-run   # status of every bag
+```
+
+### Environment & machine prerequisites
+
+| What | How |
+| :--- | :--- |
+| Data root | `DATA_ROOT` env (default `<repo>/data`). Bags go in `data/<source>/<mission>/03_Logs/*.bag`. |
+| Tracking DB port | `MISSION_DB_PORT` (default 5433). Export both in `~/.bashrc`; the systemd unit carries its own copies. |
+| Docker images | Pull from Artifact Registry and retag locally, e.g. `docker pull europe-west1-docker.pkg.dev/.../subdron-colmap:1.4.0 && docker tag ... subdron-colmap:dev`. Prefer version tags over `latest`; job records store the digest of every run. |
+| PHASEFORMER weights | One-time: `gcloud storage cp gs://subdron_dev/machine_learning/image_processing/weights/best.pth $DATA_ROOT/_state/models/PHASEFORMER/` (the runner prints this command if they are missing). |
+| Failures | The trigger never retries. Fix the cause (see the log path it prints), then re-run the stage with `--force`. |
+
+### Multi-user operation (shared machine)
+
+The trigger is a **system** service: it runs as one account regardless of who is
+logged in, and any user can check it (`systemctl status subdron-pipeline-trigger.timer`).
+To let several users review/approve and read logs:
+
+```bash
+# journal access for another user
+sudo usermod -aG systemd-journal <user>
+
+# shared data root with group-writable state (one-time)
+sudo groupadd subdron
+sudo usermod -aG subdron <each user>
+sudo mkdir -p /srv/subdron/data
+sudo chown -R <service-user>:subdron /srv/subdron
+sudo chmod -R 2775 /srv/subdron          # setgid: new files inherit the group
+setfacl -R -d -m g::rwx /srv/subdron     # new files stay group-writable
+```
+
+Then every user (and the systemd unit) sets `DATA_ROOT=/srv/subdron/data`. Code is
+per-user: each account clones the repo and runs `setup_local_orchestrator.sh` for its
+own pyenv env; only the data/state tree is shared. Users who run stages manually also
+need the `docker` group.
 
 ---
 
