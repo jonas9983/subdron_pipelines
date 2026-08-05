@@ -13,6 +13,7 @@ Type=oneshot
 User=joao
 WorkingDirectory=/home/joao/Desktop/bitbucket/subdron_pipelines
 Environment=MISSION_DB_PORT=5434
+Environment=PYTHONUNBUFFERED=1
 # For a shared machine, point everyone at a common data root:
 # Environment=DATA_ROOT=/srv/subdron/data
 ExecStart=/home/joao/.pyenv/versions/pipelines/bin/python local_orchestrator/trigger/pipeline_trigger.py --dev-code extraction

@@ -161,9 +161,11 @@ def run_job(record: dict, cmd: list[str], record_path: Path, log_path: Path) -> 
                 pct = int(m.group(1))
                 if pct // 10 > last_pct // 10 or pct == 100 and last_pct != 100:
                     sys.stdout.write(line)
+                    sys.stdout.flush()
                     last_pct = pct
             else:
                 sys.stdout.write(line)
+                sys.stdout.flush()
             tail.append(line)
             if len(tail) > 50:
                 tail.pop(0)

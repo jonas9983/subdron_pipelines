@@ -40,6 +40,8 @@ All notable changes to this project will be documented in this file.
   workflow, the trigger, and multi-user operation.
 - Runners throttle container progress bars to one line per 10% when stdout is not a
   terminal (keeps journald readable); the per-job log file still gets everything.
+- Trigger output reaches the journal immediately (`PYTHONUNBUFFERED=1` in the service
+  unit + per-line flush) instead of arriving minutes late in bursts.
 
 ### Removed
 - `scripts/run_offline_pipeline.sh` and `scripts/test_local_pipeline.sh` — superseded
