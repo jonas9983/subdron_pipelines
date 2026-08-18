@@ -57,6 +57,20 @@ def task_id_for(state_dir: Path, job_id: str) -> int | None:
         return None
 
 
+def delete_task(cfg: dict | None, state_dir: Path, job_id: str) -> None:
+    """Remove the bag's review task (if any) and its sidecar."""
+    task_id = task_id_for(state_dir, job_id)
+    if task_id and cfg:
+        try:
+            api(cfg, "DELETE", f"/api/tasks/{task_id}")
+            print(f"  removed Label Studio task {task_id}")
+        except Exception as e:
+            print(f"  [label-studio] could not delete task {task_id} ({e}) — remove it in the UI")
+    sidecar = state_dir / "ls_tasks" / f"{job_id}.json"
+    if sidecar.exists():
+        sidecar.unlink()
+
+
 def _review_video(data_root: Path, job_id: str) -> Path | None:
     """The bag's review video, from the extraction record"""
     record_path = data_root / "_state" / "jobs" / f"{job_id}.json"
@@ -95,7 +109,8 @@ def _parse_annotation(annotations: list[dict]) -> tuple[bool, list[str] | None] 
             value = item.get("value", {})
             choices += value.get("choices", [])
             for r in value.get("ranges", []):
-                ranges.append(f"{int(r['start'])}:{int(r['end'])}")
+                # the stage requires the full start:end:step form
+                ranges.append(f"{int(r['start'])}:{int(r['end'])}:1")
         if "Reject" in choices:
             return False, None
         # Only an explicit Approve triggers processing — segments alone are a draft.

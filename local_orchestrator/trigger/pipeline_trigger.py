@@ -27,7 +27,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from pipeline_helpers import resolve_data_root
+from pipeline_helpers import resolve_data_root, resolve_under_data_root
 import label_studio_sync
 
 try:
@@ -93,6 +93,42 @@ def bag_stages(bag: Path, jobs_dir: Path, approvals_dir: Path) -> dict | None:
     }
 
 
+RESET_STAGES = ("extraction", "review", "phaseformer", "colmap")
+
+
+def reset(stage: str, path_arg: str, data_root: Path) -> None:
+    """Delete a stage's records and outputs (and everything downstream of it),
+    so the next trigger pass redoes the bag from that stage."""
+    import shutil
+    path = resolve_under_data_root(path_arg, data_root)
+    source = subdron_utils.infer_source_from_path(str(path))
+    mission_id, timestamp, _ = subdron_utils.get_mission_info(str(path))
+    job_id = f"{source}__{mission_id}__{timestamp}"
+    state_dir = data_root / "_state"
+    mission = data_root / source / mission_id / "02_Post_Mission"
+    camera = mission / "camera" / timestamp
+
+    targets: list[Path] = []
+    if stage == "extraction":
+        targets += [state_dir / "jobs" / f"{job_id}.json", camera,
+                    mission / "camera" / "videos" / timestamp,
+                    mission / "navigation" / timestamp]
+        targets += (data_root / source / mission_id / "03_Logs" / "transformed").glob(f"*{timestamp}*")
+    if stage in ("extraction", "review"):
+        targets += [state_dir / "approvals" / f"{job_id}.json"]
+        label_studio_sync.delete_task(label_studio_sync.load_config(state_dir), state_dir, job_id)
+    if stage in ("extraction", "review", "phaseformer"):
+        targets += [state_dir / "jobs" / f"{job_id}__phaseformer.json", camera / "enhanced"]
+    targets += [state_dir / "jobs" / f"{job_id}__colmap-spatial.json",
+                mission / "results" / "colmap" / "runs" / timestamp]
+
+    for t in targets:
+        if t.exists():
+            shutil.rmtree(t) if t.is_dir() else t.unlink()
+            print(f"  removed {t}")
+    print(f"[{job_id}] reset from {stage} — the next trigger pass redoes it from there")
+
+
 def run_stage(runner: str, arg: str, extra: list[str], dry_run: bool) -> bool:
     cmd = [sys.executable, str(RUNNERS_DIR / runner), arg] + extra
     if dry_run:
@@ -106,6 +142,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--data-root", help="Data root (default: /srv/subdron/data; $DATA_ROOT overrides)")
     parser.add_argument("--dry-run", action="store_true", help="Report decisions without launching anything")
+    parser.add_argument("--reset", nargs=2, metavar=("STAGE", "BAG"),
+                        help=f"Redo a bag from a stage ({'/'.join(RESET_STAGES)}): deletes that "
+                             "stage's records and outputs plus everything downstream, then exits")
     parser.add_argument("--dev-code", nargs="*", choices=["extraction", "phaseformer", "colmap"],
                         default=None, metavar="STAGE",
                         help="Run stages from local checkouts: bare flag = all stages, "
@@ -122,7 +161,15 @@ def main() -> None:
     try:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except BlockingIOError:
-        print("Another trigger pass is running — skipping.")
+        print("Another trigger pass is running — skipping." if not args.reset
+              else "A trigger pass is running — retry the reset when it finishes.")
+        return
+
+    if args.reset:
+        stage, bag_path = args.reset
+        if stage not in RESET_STAGES:
+            sys.exit(f"[ERROR] unknown stage '{stage}' — expected one of: {', '.join(RESET_STAGES)}")
+        reset(stage, bag_path, data_root)
         return
 
     dev_stages = (["extraction", "phaseformer", "colmap"] if args.dev_code == []

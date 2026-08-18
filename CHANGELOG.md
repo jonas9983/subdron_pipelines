@@ -19,6 +19,9 @@ All notable changes to this project will be documented in this file.
     error line, never auto-retried.
   - `trigger/approve_bag_for_processing.py` — records the video-review decision
     (approve/reject, optional frame ranges) that gates the GPU stages.
+  - `pipeline_trigger.py --reset <stage> <bag>` — redo a bag from any stage: deletes
+    that stage's records and outputs plus everything downstream (including the
+    Label Studio review task), so the next pass reprocesses from there.
   - Label Studio review integration (`trigger/label_studio_sync.py`, with a one-time
     `setup` subcommand): the trigger creates one review task per extracted bag and
     converts finished annotations (timeline "Process" segments + Approve/Reject)
@@ -26,11 +29,13 @@ All notable changes to this project will be documented in this file.
     exists; LS outages never block a pass; the CLI approve script stays as fallback.
   - `trigger/systemd/` — service + timer units to run the trigger every minute.
   - `trigger/pipeline_dashboard.py` — live status dashboard on port 8090 (LAN-visible):
-    one row per bag, one colored cell per stage (done/running/failed/pending/rejected),
-    with elapsed time + latest progress line for running jobs and the last error + log
-    path for failed ones. Stdlib HTTP server, no new dependencies; own systemd unit.
-    Corrupt job records (e.g. interrupted writes) are surfaced as failures with the
-    file path instead of crashing the trigger or the dashboard.
+    one row per bag, one colored cell per stage (done/running/failed/pending/rejected).
+    Running cells show elapsed time, a progress bar and the latest log line; running and
+    failed cells link to the full job log (served at `/log/<job_id>`); review cells link
+    to the Label Studio task (using the viewer's hostname, so links work from any
+    machine); header shows per-state counts and a GPU busy/idle badge. Stdlib HTTP
+    server, no new dependencies; own systemd unit. Corrupt job records (e.g. interrupted
+    writes) are surfaced as failures instead of crashing the trigger or the dashboard.
   - Local mission-tracking Postgres via `docker-compose.yml` + `init_db.sql`
     (containers log through the same `log_mission_stage` pathway as the cloud;
     host port configurable via `MISSION_DB_PORT`).

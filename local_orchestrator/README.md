@@ -118,6 +118,7 @@ sudo systemctl daemon-reload && sudo systemctl enable --now subdron-pipeline-das
 | Docker images | Versions are pinned in `local_orchestrator/images.env` (edit + commit to upgrade). Apply on any machine with `./scripts/update_local_images.sh` — it pulls the pinned versions and points the local `:dev` aliases at them. Job records store the digest of every run. |
 | PHASEFORMER weights | One-time: `gcloud storage cp gs://subdron_dev/machine_learning/image_processing/weights/best.pth /srv/subdron/data/_state/models/PHASEFORMER/` (the runner prints this command if the weights are missing). |
 | Failures | The trigger never retries. Fix the cause (see the log path it prints), then re-run the stage with `--force`. |
+| Redoing a bag | `python local_orchestrator/trigger/pipeline_trigger.py --reset <stage> <bag_path>` with stage `extraction`, `review`, `phaseformer` or `colmap` — deletes that stage's records and outputs plus everything downstream (including the Label Studio task when the review is reset); the next trigger pass redoes it from there. |
 
 ## Multi-user operation
 
