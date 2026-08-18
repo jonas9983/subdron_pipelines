@@ -58,13 +58,13 @@ def task_id_for(state_dir: Path, job_id: str) -> int | None:
 
 
 def _review_video(data_root: Path, job_id: str) -> Path | None:
-    """The bag's review video, from the extraction record (overlaid preferred)."""
+    """The bag's review video, from the extraction record"""
     record_path = data_root / "_state" / "jobs" / f"{job_id}.json"
     try:
         videos_dir = Path(json.loads(record_path.read_text())["outputs"]["videos_dir"])
     except (json.JSONDecodeError, OSError, KeyError):
         return None
-    for prefix in ("overlaid_timestamp", "clean"):
+    for prefix in ("clean", "overlaid_timestamp"):
         hit = next(iter(sorted(videos_dir.glob(f"{prefix}*.mp4"))), None)
         if hit:
             return hit
@@ -171,6 +171,14 @@ def setup(url: str, token: str, data_root_arg: str | None, video_prefix: str = "
     })
     cfg["project_id"] = project["id"]
     print(f"Created project 'SUBDRON bag review' (id {project['id']})")
+
+    # LS only serves local files registered as a project storage.
+    ls_path = ("/label-studio/" + video_prefix.strip("/")) if video_prefix else str(data_root)
+    api(cfg, "POST", "/api/storages/localfiles", {
+        "project": project["id"], "path": ls_path,
+        "title": "pipeline data", "use_blob_urls": False,
+    })
+    print(f"Registered local storage: {ls_path}")
 
     out = data_root / "_state" / "label_studio.json"
     out.parent.mkdir(parents=True, exist_ok=True)
