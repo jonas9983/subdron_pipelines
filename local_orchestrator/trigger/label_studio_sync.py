@@ -14,6 +14,7 @@ API failures are logged and skipped — the pipeline never depends on LS being u
 from __future__ import annotations
 
 import json
+import os
 import sys
 import urllib.error
 import urllib.request
@@ -186,10 +187,13 @@ if __name__ == "__main__":
     sub = parser.add_subparsers(dest="command", required=True)
     p = sub.add_parser("setup", help="Create the review project and save the connection")
     p.add_argument("--url", required=True, help="Label Studio base URL, e.g. http://localhost:8080")
-    p.add_argument("--token", required=True, help="API token (LS UI -> Account & Settings)")
+    p.add_argument("--token", default=os.getenv("LABEL_STUDIO_TOKEN"),
+                   help="API token (LS UI -> Account & Settings); default: $LABEL_STUDIO_TOKEN")
     p.add_argument("--data-root", help="Data root (default: /srv/subdron/data; $DATA_ROOT overrides)")
     p.add_argument("--video-prefix", default="",
                    help="Path of the data root inside LS's document root, when they differ "
                         "(e.g. subdron_data for a mount at <document root>/subdron_data)")
     args = parser.parse_args()
+    if not args.token:
+        parser.error("no token: pass --token or set LABEL_STUDIO_TOKEN")
     setup(args.url, args.token, args.data_root, args.video_prefix)

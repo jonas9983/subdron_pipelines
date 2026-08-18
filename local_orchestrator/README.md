@@ -76,8 +76,10 @@ python local_orchestrator/trigger/approve_bag_for_processing.py /srv/subdron/dat
    path inside the LS document root — for the mount above:
    ```bash
    python local_orchestrator/trigger/label_studio_sync.py setup \
-       --url http://localhost:8080 --token <token> --video-prefix subdron_data
+       --url http://localhost:8080 --video-prefix subdron_data
    ```
+   The token is read from the `LABEL_STUDIO_TOKEN` environment variable
+   (or passed explicitly with `--token`).
 
 From then on the trigger and the dashboard show "in review (task N)" for bags with
 an open task. Removing `_state/label_studio.json` disables the integration; the
