@@ -97,8 +97,8 @@ def _parse_annotation(annotations: list[dict]) -> tuple[bool, list[str] | None] 
                 ranges.append(f"{int(r['start'])}:{int(r['end'])}")
         if "Reject" in choices:
             return False, None
-        # Segments alone count as approval; bare "Approve" means the whole bag.
-        if "Approve" in choices or ranges:
+        # Only an explicit Approve triggers processing — segments alone are a draft.
+        if "Approve" in choices:
             return True, sorted(ranges, key=lambda s: int(s.split(":")[0])) or None
     return None
 
@@ -114,10 +114,11 @@ def sync_bag(cfg: dict, data_root: Path, job_id: str, mission_id: str, timestamp
             video = _review_video(data_root, job_id)
             if video is None:
                 return  # no video (e.g. record missing) — CLI approval still works
+            prefix = cfg.get("video_prefix", "")
             task = api(cfg, "POST", "/api/tasks", {
                 "project": cfg["project_id"],
                 "data": {
-                    "video": f"/data/local-files/?d={video.relative_to(data_root)}",
+                    "video": f"/data/local-files/?d={prefix}{video.relative_to(data_root)}",
                     "job_id": job_id, "mission": mission_id, "timestamp": timestamp,
                 },
             })
@@ -150,10 +151,12 @@ LABEL_CONFIG = """
 """
 
 
-def setup(url: str, token: str, data_root_arg: str | None) -> None:
+def setup(url: str, token: str, data_root_arg: str | None, video_prefix: str = "") -> None:
     from pipeline_helpers import fail, resolve_data_root
     data_root = resolve_data_root(data_root_arg)
     cfg = {"url": url.rstrip("/"), "token": token}
+    if video_prefix:
+        cfg["video_prefix"] = video_prefix.rstrip("/") + "/"
     try:
         version = api(cfg, "GET", "/api/version")
     except Exception as e:
@@ -185,5 +188,8 @@ if __name__ == "__main__":
     p.add_argument("--url", required=True, help="Label Studio base URL, e.g. http://localhost:8080")
     p.add_argument("--token", required=True, help="API token (LS UI -> Account & Settings)")
     p.add_argument("--data-root", help="Data root (default: /srv/subdron/data; $DATA_ROOT overrides)")
+    p.add_argument("--video-prefix", default="",
+                   help="Path of the data root inside LS's document root, when they differ "
+                        "(e.g. subdron_data for a mount at <document root>/subdron_data)")
     args = parser.parse_args()
-    setup(args.url, args.token, args.data_root)
+    setup(args.url, args.token, args.data_root, args.video_prefix)

@@ -38,11 +38,12 @@ are reported, never auto-retried.
 
 The approval gate: after extraction each bag waits for a human decision. With the
 Label Studio integration active (below), the trigger creates one review task per
-extracted bag — watch the video there, mark the segments worth processing on the
-timeline ("Process" label) and/or choose Approve/Reject, and the next trigger pass
-turns the annotation into the approval automatically (timeline frames map 1:1 to
-image indices; the videos are rendered at 30 fps from the extracted images).
-The CLI fallback records the same decision by hand:
+extracted bag — watch the video there and mark the segments worth processing on the
+timeline ("Process" label). Segments alone are a draft: **nothing runs until the
+Approve choice is selected and the annotation submitted** (Reject skips the GPU
+stages). The next trigger pass then converts it into the approval — timeline frames
+map 1:1 to image indices, since the videos are rendered at 30 fps from the extracted
+images. The CLI fallback records the same decision by hand:
 
 ```bash
 python local_orchestrator/trigger/approve_bag_for_processing.py /srv/subdron/data/sparus2-25/P1063/03_Logs/<bag>.bag --ranges 0:500 1400:2100
@@ -51,25 +52,31 @@ python local_orchestrator/trigger/approve_bag_for_processing.py /srv/subdron/dat
 
 ### Label Studio review setup (one-time per machine)
 
-1. In the Label Studio compose stack, pin a current image (e.g.
-   `heartexlabs/label-studio:1.23.0`) and give the app service read access to the
-   data root plus local file serving:
+1. In the Label Studio compose stack: pin a current image (replace `build: .` +
+   `image: ...:latest` with `image: heartexlabs/label-studio:1.23.0` on every
+   service using it), make sure the app service has
+   `LABEL_STUDIO_LOCAL_FILES_SERVING_ENABLED=true`, and mount the data root
+   read-only under its `LABEL_STUDIO_LOCAL_FILES_DOCUMENT_ROOT`, e.g. with
+   document root `/label-studio`:
    ```yaml
-   volumes: [ /srv/subdron/data:/srv/subdron/data:ro ]
-   environment:
-     LABEL_STUDIO_LOCAL_FILES_SERVING_ENABLED: "true"
-     LABEL_STUDIO_LOCAL_FILES_DOCUMENT_ROOT: /srv/subdron/data
+   volumes:
+     - /srv/subdron/data:/label-studio/subdron_data:ro
    ```
-   then `docker compose pull && docker compose up -d` (back up its DB first:
-   `docker exec <ls-db-container> pg_dump -U postgres postgres > ls_backup.sql`).
+   Back up its DB, then update:
+   ```bash
+   docker compose exec db pg_dump -U postgres postgres > ls_backup.sql
+   docker compose pull && docker compose up -d
+   ```
 2. Get an API token from the LS UI (Account & Settings → Access Token). On LS ≥ 1.17
    the organization setting "Legacy Tokens" must be enabled
    (Organization → API Tokens Settings) for `Token` auth — installations upgraded
    from older versions already have it on.
 3. Connect the pipeline (creates the "SUBDRON bag review" project and saves the
-   connection to `_state/label_studio.json`):
+   connection to `_state/label_studio.json`). `--video-prefix` is the data root's
+   path inside the LS document root — for the mount above:
    ```bash
-   python local_orchestrator/trigger/label_studio_sync.py setup --url http://localhost:8080 --token <token>
+   python local_orchestrator/trigger/label_studio_sync.py setup \
+       --url http://localhost:8080 --token <token> --video-prefix subdron_data
    ```
 
 From then on the trigger and the dashboard show "in review (task N)" for bags with
