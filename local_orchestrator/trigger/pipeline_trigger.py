@@ -28,6 +28,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from pipeline_helpers import resolve_data_root
+import label_studio_sync
 
 try:
     import subdron_utils
@@ -86,6 +87,7 @@ def bag_stages(bag: Path, jobs_dir: Path, approvals_dir: Path) -> dict | None:
         "job_id": job_id,
         "extract": record_status(jobs_dir, job_id),
         "approval": approval,
+        "ls_task": label_studio_sync.task_id_for(jobs_dir.parent, job_id),
         "enhance": record_status(jobs_dir, f"{job_id}__phaseformer"),
         "colmap": record_status(jobs_dir, f"{job_id}__colmap-spatial"),
     }
@@ -129,6 +131,9 @@ def main() -> None:
     def stage_extra(stage: str) -> list[str]:
         return ["--dev-code"] if stage in dev_stages else []
 
+    # Label Studio sync is active only when configured, and never in dry runs.
+    ls_cfg = None if args.dry_run else label_studio_sync.load_config(state_dir)
+
     bags = find_bags(data_root)
     print(f"Trigger pass: {len(bags)} bag(s) under {data_root}")
 
@@ -155,9 +160,14 @@ def main() -> None:
 
         # Stage 2: human approval gate, then phaseformer
         approval_path = approvals_dir / f"{job_id}.json"
+        if not approval_path.exists() and ls_cfg:
+            # create the review task / harvest a finished annotation into an approval
+            label_studio_sync.sync_bag(ls_cfg, data_root, job_id, mission_id, timestamp)
         if not approval_path.exists():
-            print(f"[{job_id}] extracted — waiting for review "
-                  f"(watch videos, then run approve_bag_for_processing.py)")
+            task_id = label_studio_sync.task_id_for(state_dir, job_id)
+            how = (f"in Label Studio (task {task_id})" if task_id
+                   else "watch videos, then run approve_bag_for_processing.py")
+            print(f"[{job_id}] extracted — waiting for review ({how})")
             continue
         approval = json.loads(approval_path.read_text())
         if not approval.get("approved"):

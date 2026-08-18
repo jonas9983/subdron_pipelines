@@ -91,6 +91,9 @@ def review_cell(stages: dict) -> tuple[str, str, str]:
     approval = stages["approval"]
     if approval is None:
         if stages["extract"] == "done":
+            if stages.get("ls_task"):
+                return (f"in review (task {stages['ls_task']})", "pending",
+                        "annotate it in Label Studio")
             return "waiting for review", "pending", "run approve_bag_for_processing.py"
         return "-", "pending", ""
     if not approval.get("approved"):

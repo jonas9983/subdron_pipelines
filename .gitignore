@@ -61,3 +61,4 @@ sparus
 data/
 .venv/
 .python-version
+__pycache__/

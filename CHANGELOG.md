@@ -19,6 +19,11 @@ All notable changes to this project will be documented in this file.
     error line, never auto-retried.
   - `trigger/approve_bag_for_processing.py` — records the video-review decision
     (approve/reject, optional frame ranges) that gates the GPU stages.
+  - Label Studio review integration (`trigger/label_studio_sync.py`, with a one-time
+    `setup` subcommand): the trigger creates one review task per extracted bag and
+    converts finished annotations (timeline "Process" segments + Approve/Reject)
+    into the standard approval files. Active only when `_state/label_studio.json`
+    exists; LS outages never block a pass; the CLI approve script stays as fallback.
   - `trigger/systemd/` — service + timer units to run the trigger every minute.
   - `trigger/pipeline_dashboard.py` — live status dashboard on port 8090 (LAN-visible):
     one row per bag, one colored cell per stage (done/running/failed/pending/rejected),
@@ -46,8 +51,9 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 - `.gitignore`: local data tree, virtualenvs and `.python-version` are ignored.
-- README: new "Local Orchestrator" section documenting setup, runners, the approval
-  workflow, the trigger, and multi-user operation.
+- README split: the cloud pipeline stays in the top-level README; the local
+  orchestrator (setup, runners, approval workflow, trigger, dashboard, multi-user)
+  is documented in `local_orchestrator/README.md`.
 - Runners throttle container progress bars to one line per 10% when stdout is not a
   terminal (keeps journald readable); the per-job log file still gets everything.
 - Trigger output reaches the journal immediately (`PYTHONUNBUFFERED=1` in the service
