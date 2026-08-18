@@ -41,12 +41,19 @@ def record_status(jobs_dir: Path, job_id: str) -> str | None:
     p = jobs_dir / f"{job_id}.json"
     if not p.exists():
         return None
-    return json.loads(p.read_text()).get("status")
+    try:
+        return json.loads(p.read_text()).get("status")
+    except (json.JSONDecodeError, OSError):
+        return "corrupt"  # unreadable record (e.g. interrupted write) — treat like a failure
 
 
 def failure_hint(jobs_dir: Path, job_id: str) -> str:
     """Last error line and log path from a failed job's record."""
-    record = json.loads((jobs_dir / f"{job_id}.json").read_text())
+    try:
+        record = json.loads((jobs_dir / f"{job_id}.json").read_text())
+    except (json.JSONDecodeError, OSError):
+        return (f"\n      unreadable job record: {jobs_dir / f'{job_id}.json'}"
+                f"\n      delete it to re-run the stage")
     tail = (record.get("error_tail") or "").strip().splitlines()
     last = next((ln for ln in reversed(tail) if ln.strip()), "(no output captured)")
     log = record.get("outputs", {}).get("log", "?")
@@ -56,6 +63,32 @@ def failure_hint(jobs_dir: Path, job_id: str) -> str:
 def find_bags(data_root: Path) -> list[Path]:
     return [b for b in sorted(data_root.glob("*/*/03_Logs/*.bag"))
             if "transformed" not in b.parts]
+
+
+def bag_stages(bag: Path, jobs_dir: Path, approvals_dir: Path) -> dict | None:
+    """Identity + per-stage status of one bag (shared with the dashboard).
+    Returns None when the bag path yields no mission identity."""
+    try:
+        source = subdron_utils.infer_source_from_path(str(bag))
+        mission_id, timestamp, _ = subdron_utils.get_mission_info(str(bag))
+    except ValueError:
+        return None
+    job_id = f"{source}__{mission_id}__{timestamp}"
+    approval = None
+    approval_path = approvals_dir / f"{job_id}.json"
+    if approval_path.exists():
+        try:
+            approval = json.loads(approval_path.read_text())
+        except (json.JSONDecodeError, OSError):
+            pass  # unreadable approval = no decision yet
+    return {
+        "source": source, "mission_id": mission_id, "timestamp": timestamp,
+        "job_id": job_id,
+        "extract": record_status(jobs_dir, job_id),
+        "approval": approval,
+        "enhance": record_status(jobs_dir, f"{job_id}__phaseformer"),
+        "colmap": record_status(jobs_dir, f"{job_id}__colmap-spatial"),
+    }
 
 
 def run_stage(runner: str, arg: str, extra: list[str], dry_run: bool) -> bool:
@@ -115,8 +148,8 @@ def main() -> None:
             print(f"[{job_id}] new bag -> extraction")
             run_stage("run_extraction.py", str(bag), stage_extra("extraction"), args.dry_run)
             continue
-        if status in ("failed", "running"):
-            hint = failure_hint(jobs_dir, job_id) if status == "failed" else ""
+        if status != "done":
+            hint = failure_hint(jobs_dir, job_id) if status in ("failed", "corrupt") else ""
             print(f"[{job_id}] extraction {status}{hint}")
             continue
 
@@ -144,8 +177,8 @@ def main() -> None:
                 ok = run_stage("run_phaseformer.py", str(input_dir), range_args, args.dry_run) and ok
             if not ok or args.dry_run:
                 continue
-        elif pf_status in ("failed", "running"):
-            hint = failure_hint(jobs_dir, f"{job_id}__phaseformer") if pf_status == "failed" else ""
+        elif pf_status != "done":
+            hint = failure_hint(jobs_dir, f"{job_id}__phaseformer") if pf_status in ("failed", "corrupt") else ""
             print(f"[{job_id}] phaseformer {pf_status}{hint}")
             continue
 
@@ -158,7 +191,7 @@ def main() -> None:
         elif cm_status == "done":
             print(f"[{job_id}] complete")
         else:
-            hint = failure_hint(jobs_dir, f"{job_id}__colmap-spatial") if cm_status == "failed" else ""
+            hint = failure_hint(jobs_dir, f"{job_id}__colmap-spatial") if cm_status in ("failed", "corrupt") else ""
             print(f"[{job_id}] colmap {cm_status}{hint}")
 
 

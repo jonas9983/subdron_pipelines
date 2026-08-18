@@ -115,6 +115,20 @@ journalctl -u subdron-pipeline-trigger -f          # watch trigger live
 python local_orchestrator/trigger/pipeline_trigger.py --dry-run   # status of every bag
 ```
 
+### Monitoring (`local_orchestrator/trigger/pipeline_dashboard.py`)
+
+A live status dashboard — one row per bag, one colored cell per stage
+(green done · yellow running · red failed · blue pending · grey rejected).
+Running cells show elapsed time and the latest progress line; failed cells show
+the last error and the log path. Rendered from the job records on every request
+(auto-refreshes every 10 s), reachable from any machine on the LAN:
+
+```bash
+sudo cp local_orchestrator/trigger/systemd/subdron-pipeline-dashboard.service /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now subdron-pipeline-dashboard
+# open http://<machine>:8080   (port: PIPELINE_DASHBOARD_PORT)
+```
+
 ### Environment & machine prerequisites
 
 | What | How |

@@ -20,6 +20,12 @@ All notable changes to this project will be documented in this file.
   - `trigger/approve_bag_for_processing.py` — records the video-review decision
     (approve/reject, optional frame ranges) that gates the GPU stages.
   - `trigger/systemd/` — service + timer units to run the trigger every minute.
+  - `trigger/pipeline_dashboard.py` — live status dashboard on port 8080 (LAN-visible):
+    one row per bag, one colored cell per stage (done/running/failed/pending/rejected),
+    with elapsed time + latest progress line for running jobs and the last error + log
+    path for failed ones. Stdlib HTTP server, no new dependencies; own systemd unit.
+    Corrupt job records (e.g. interrupted writes) are surfaced as failures with the
+    file path instead of crashing the trigger or the dashboard.
   - Local mission-tracking Postgres via `docker-compose.yml` + `init_db.sql`
     (containers log through the same `log_mission_stage` pathway as the cloud;
     host port configurable via `MISSION_DB_PORT`).
