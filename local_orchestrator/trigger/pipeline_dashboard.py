@@ -2,7 +2,7 @@
 """Live pipeline status dashboard: one row per bag, one colored cell per stage.
 
 Reads the same job records the trigger uses (DATA_ROOT/_state/) on every request,
-so the page is always current. Serves plain self-contained HTML on port 8080
+so the page is always current. Serves plain self-contained HTML on port 8090
 (override with PIPELINE_DASHBOARD_PORT); binds 0.0.0.0 for LAN access.
 
 Usage:
@@ -153,7 +153,7 @@ def render(data_root: Path) -> str:
 
 def main() -> None:
     data_root = resolve_data_root(None)
-    port = int(os.getenv("PIPELINE_DASHBOARD_PORT", "8080"))
+    port = int(os.getenv("PIPELINE_DASHBOARD_PORT", "8090"))
 
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):

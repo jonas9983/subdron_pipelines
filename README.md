@@ -126,7 +126,7 @@ the last error and the log path. Rendered from the job records on every request
 ```bash
 sudo cp local_orchestrator/trigger/systemd/subdron-pipeline-dashboard.service /etc/systemd/system/
 sudo systemctl daemon-reload && sudo systemctl enable --now subdron-pipeline-dashboard
-# open http://<machine>:8080   (port: PIPELINE_DASHBOARD_PORT)
+# open http://<machine>:8090   (port: PIPELINE_DASHBOARD_PORT)
 ```
 
 ### Environment & machine prerequisites

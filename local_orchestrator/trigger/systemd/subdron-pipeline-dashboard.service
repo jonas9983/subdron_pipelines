@@ -2,7 +2,7 @@
 #   sudo cp local_orchestrator/trigger/systemd/subdron-pipeline-dashboard.service /etc/systemd/system/
 #   sudo systemctl daemon-reload
 #   sudo systemctl enable --now subdron-pipeline-dashboard
-# Open:  http://<machine>:8080
+# Open:  http://<machine>:8090
 [Unit]
 Description=Subdron pipeline status dashboard
 After=network.target
