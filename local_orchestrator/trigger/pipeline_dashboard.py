@@ -137,7 +137,8 @@ def review_cell(stages: dict, ls_cfg: dict | None, host: str) -> dict:
 def render_cell(cell: dict) -> str:
     label = html.escape(cell["label"])
     if cell["href"]:
-        label = f'<a href="{html.escape(cell["href"])}">{label}</a>'
+        label = (f'<a href="{html.escape(cell["href"])}" target="_blank" '
+                 f'rel="noopener">{label}</a>')
     inner = label
     if cell["pct"] is not None:
         inner += f'<div class="bar"><div style="width:{cell["pct"]}%"></div></div>'
@@ -181,7 +182,7 @@ def render(data_root: Path, host: str = "") -> str:
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     summary = " · ".join(f"{v} {k}" for k, v in counts.items() if v) or "no bags"
     gpu = ('<span class="gpu busy">GPU busy</span>' if gpu_busy
-           else '<span class="gpu idle">GPU idle</span>')
+           else '<span class="gpu idle">GPU free</span>')
     header_cells = "".join(f"<th>{c}</th>" for c in COLUMNS)
     body = "".join(rows) or '<tr><td colspan="6">No bags found</td></tr>'
     return f"""<!DOCTYPE html><html><head><meta charset="utf-8">

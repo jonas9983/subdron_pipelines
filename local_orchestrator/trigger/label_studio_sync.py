@@ -154,7 +154,7 @@ def sync_bag(cfg: dict, data_root: Path, job_id: str, mission_id: str, timestamp
 
 LABEL_CONFIG = """
 <View>
-  <Header value="Watch the video, then either Reject, or mark the segments worth processing"/>
+  <Header value="Mark the segments worth processing"/>
   <Video name="video" value="$video" frameRate="30"/>
   <Choices name="verdict" toName="video" showInLine="true">
     <Choice value="Approve" hotkey="a"/>
