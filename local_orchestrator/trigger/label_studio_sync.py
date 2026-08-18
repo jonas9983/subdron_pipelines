@@ -142,11 +142,11 @@ LABEL_CONFIG = """
   <Header value="Watch the video, then either Reject, or mark the segments worth processing"/>
   <Video name="video" value="$video" frameRate="30"/>
   <Choices name="verdict" toName="video" showInLine="true">
-    <Choice value="Approve"/>
-    <Choice value="Reject"/>
+    <Choice value="Approve" hotkey="a"/>
+    <Choice value="Reject" hotkey="r"/>
   </Choices>
   <TimelineLabels name="ranges" toName="video">
-    <Label value="Process" background="#4caf50"/>
+    <Label value="Process" background="#4caf50" hotkey="1"/>
   </TimelineLabels>
 </View>
 """
