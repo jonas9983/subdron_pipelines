@@ -74,7 +74,7 @@ def bag_stages(bag: Path, jobs_dir: Path, approvals_dir: Path) -> dict | None:
         mission_id, timestamp, _ = subdron_utils.get_mission_info(str(bag))
     except ValueError:
         return None
-    job_id = f"{source}__{mission_id}__{timestamp}"
+    job_id = f"{source}_{mission_id}_{timestamp}"
     approval = None
     approval_path = approvals_dir / f"{job_id}.json"
     if approval_path.exists():
@@ -88,12 +88,13 @@ def bag_stages(bag: Path, jobs_dir: Path, approvals_dir: Path) -> dict | None:
         "extract": record_status(jobs_dir, job_id),
         "approval": approval,
         "ls_task": label_studio_sync.task_id_for(jobs_dir.parent, job_id),
-        "enhance": record_status(jobs_dir, f"{job_id}__phaseformer"),
-        "colmap": record_status(jobs_dir, f"{job_id}__colmap-spatial"),
+        "anomaly": record_status(jobs_dir, f"{job_id}_anomaly"),
+        "enhance": record_status(jobs_dir, f"{job_id}_phaseformer"),
+        "colmap": record_status(jobs_dir, f"{job_id}_colmap-spatial"),
     }
 
 
-RESET_STAGES = ("extraction", "review", "phaseformer", "colmap")
+RESET_STAGES = ("extraction", "review", "anomaly", "phaseformer", "colmap")
 
 
 def reset(stage: str, path_arg: str, data_root: Path) -> None:
@@ -103,7 +104,7 @@ def reset(stage: str, path_arg: str, data_root: Path) -> None:
     path = resolve_under_data_root(path_arg, data_root)
     source = subdron_utils.infer_source_from_path(str(path))
     mission_id, timestamp, _ = subdron_utils.get_mission_info(str(path))
-    job_id = f"{source}__{mission_id}__{timestamp}"
+    job_id = f"{source}_{mission_id}_{timestamp}"
     state_dir = data_root / "_state"
     mission = data_root / source / mission_id / "02_Post_Mission"
     camera = mission / "camera" / timestamp
@@ -114,13 +115,18 @@ def reset(stage: str, path_arg: str, data_root: Path) -> None:
                     mission / "camera" / "videos" / timestamp,
                     mission / "navigation" / timestamp]
         targets += (data_root / source / mission_id / "03_Logs" / "transformed").glob(f"*{timestamp}*")
+    if stage in ("extraction", "anomaly"):
+        # anomaly depends only on extraction, so it is not part of the
+        # review -> phaseformer -> colmap cascade
+        targets += [state_dir / "jobs" / f"{job_id}_anomaly.json", camera / "anomaly"]
     if stage in ("extraction", "review"):
         targets += [state_dir / "approvals" / f"{job_id}.json"]
         label_studio_sync.delete_task(label_studio_sync.load_config(state_dir), state_dir, job_id)
     if stage in ("extraction", "review", "phaseformer"):
-        targets += [state_dir / "jobs" / f"{job_id}__phaseformer.json", camera / "enhanced"]
-    targets += [state_dir / "jobs" / f"{job_id}__colmap-spatial.json",
-                mission / "results" / "colmap" / "runs" / timestamp]
+        targets += [state_dir / "jobs" / f"{job_id}_phaseformer.json", camera / "enhanced"]
+    if stage != "anomaly":
+        targets += [state_dir / "jobs" / f"{job_id}_colmap-spatial.json",
+                    mission / "results" / "colmap" / "runs" / timestamp]
 
     for t in targets:
         if t.exists():
@@ -191,7 +197,7 @@ def main() -> None:
         except ValueError as e:
             print(f"  SKIP {bag}: cannot derive identity ({e})")
             continue
-        job_id = f"{source}__{mission_id}__{timestamp}"
+        job_id = f"{source}_{mission_id}_{timestamp}"
         mission_dir = data_root / source / mission_id / "02_Post_Mission"
 
         # Stage 1: extraction
@@ -204,6 +210,24 @@ def main() -> None:
             hint = failure_hint(jobs_dir, job_id) if status in ("failed", "corrupt") else ""
             print(f"[{job_id}] extraction {status}{hint}")
             continue
+
+        # Stage 1b: anomaly detection — needs only extracted images, so it runs
+        # right away, independent of the review gate (results help the reviewer).
+        # Launched in the background: the API does the work, the rest of the
+        # pass (and the GPU stages) never wait for it.
+        an_status = record_status(jobs_dir, f"{job_id}_anomaly")
+        if an_status is None:
+            input_dir = mission_dir / "camera" / timestamp / "image_pose_pairs"
+            if input_dir.is_dir():
+                cmd = [sys.executable, str(RUNNERS_DIR / "run_anomaly.py"), str(input_dir)]
+                if args.dry_run:
+                    print(f"  would run in background: {' '.join(cmd)}")
+                else:
+                    print(f"[{job_id}] extracted -> anomaly detection (background)")
+                    subprocess.Popen(cmd, stdout=subprocess.DEVNULL,
+                                     stderr=subprocess.DEVNULL, start_new_session=True)
+        elif an_status not in ("done", "running"):
+            print(f"[{job_id}] anomaly {an_status}{failure_hint(jobs_dir, f'{job_id}_anomaly')}")
 
         # Stage 2: human approval gate, then phaseformer
         approval_path = approvals_dir / f"{job_id}.json"
@@ -221,7 +245,7 @@ def main() -> None:
             print(f"[{job_id}] rejected — skipping GPU stages")
             continue
 
-        pf_status = record_status(jobs_dir, f"{job_id}__phaseformer")
+        pf_status = record_status(jobs_dir, f"{job_id}_phaseformer")
         if pf_status is None:
             input_dir = mission_dir / "camera" / timestamp / "image_pose_pairs"
             ranges = approval.get("ranges") or [None]
@@ -235,12 +259,12 @@ def main() -> None:
             if not ok or args.dry_run:
                 continue
         elif pf_status != "done":
-            hint = failure_hint(jobs_dir, f"{job_id}__phaseformer") if pf_status in ("failed", "corrupt") else ""
+            hint = failure_hint(jobs_dir, f"{job_id}_phaseformer") if pf_status in ("failed", "corrupt") else ""
             print(f"[{job_id}] phaseformer {pf_status}{hint}")
             continue
 
         # Stage 3: colmap
-        cm_status = record_status(jobs_dir, f"{job_id}__colmap-spatial")
+        cm_status = record_status(jobs_dir, f"{job_id}_colmap-spatial")
         if cm_status is None:
             enhanced = mission_dir / "camera" / timestamp / "enhanced" / "PHASEFORMER"
             print(f"[{job_id}] enhanced -> colmap")
@@ -248,7 +272,7 @@ def main() -> None:
         elif cm_status == "done":
             print(f"[{job_id}] complete")
         else:
-            hint = failure_hint(jobs_dir, f"{job_id}__colmap-spatial") if cm_status in ("failed", "corrupt") else ""
+            hint = failure_hint(jobs_dir, f"{job_id}_colmap-spatial") if cm_status in ("failed", "corrupt") else ""
             print(f"[{job_id}] colmap {cm_status}{hint}")
 
 

@@ -86,7 +86,7 @@ def main() -> None:
     poses_rel = poses.relative_to(data_root).as_posix()
 
     dir_version = f"{ip_method or 'RAW'}_{args.matching_strategy}"
-    job_id = f"{source}__{mission_id}__{timestamp}__colmap-{args.matching_strategy}"
+    job_id = f"{source}_{mission_id}_{timestamp}_colmap-{args.matching_strategy}"
 
     state_dir = data_root / "_state"
     record_path = state_dir / "jobs" / f"{job_id}.json"

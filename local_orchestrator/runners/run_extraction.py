@@ -67,7 +67,7 @@ def main() -> None:
         mission_id, timestamp, _ = subdron_utils.get_mission_info(str(bag))
     except ValueError as e:
         fail(f"Could not derive mission identity from path: {e}")
-    job_id = f"{source}__{mission_id}__{timestamp}"
+    job_id = f"{source}_{mission_id}_{timestamp}"
 
     state_dir = data_root / "_state"
     record_path = state_dir / "jobs" / f"{job_id}.json"

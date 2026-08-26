@@ -51,7 +51,7 @@ def main() -> None:
     path = resolve_under_data_root(args.path, data_root)
     source = subdron_utils.infer_source_from_path(str(path))
     mission_id, timestamp, _ = subdron_utils.get_mission_info(str(path))
-    job_id = f"{source}__{mission_id}__{timestamp}"
+    job_id = f"{source}_{mission_id}_{timestamp}"
 
     approval = {
         "job_id": job_id,

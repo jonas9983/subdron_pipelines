@@ -160,8 +160,8 @@ def render(data_root: Path, host: str = "") -> str:
         cells = [
             job_cell(jobs_dir, stages["job_id"], stages["extract"]),
             review_cell(stages, ls_cfg, host),
-            job_cell(jobs_dir, f"{stages['job_id']}__phaseformer", stages["enhance"]),
-            job_cell(jobs_dir, f"{stages['job_id']}__colmap-spatial", stages["colmap"]),
+            job_cell(jobs_dir, f"{stages['job_id']}_phaseformer", stages["enhance"]),
+            job_cell(jobs_dir, f"{stages['job_id']}_colmap-spatial", stages["colmap"]),
         ]
         gpu_busy = gpu_busy or "running" in (stages["enhance"], stages["colmap"])
         classes = [c["cls"] for c in cells]
