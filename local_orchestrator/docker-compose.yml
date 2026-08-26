@@ -13,5 +13,21 @@ services:
       - mission_db_data:/var/lib/postgresql/data
       - ./init_db.sql:/docker-entrypoint-initdb.d/init_db.sql:ro
 
+  anomaly-api:
+    image: subdron-anomaly-api:${ANOMALY_API_VERSION:-dev}
+    container_name: subdron-anomaly-api
+    restart: unless-stopped
+    runtime: nvidia
+    ports:
+      - "${ANOMALY_API_PORT:-8095}:8080"
+    environment:
+      LOCAL_CACHE_BASE: /models
+      TRUST_REMOTE_CODE: "1"
+    volumes:
+      # Weights live on the host: _state/models/anomaly/<model>/model.ckpt
+      - ${DATA_ROOT:-/srv/subdron/data}/_state/models/anomaly:/models
+      # Mission tree: the API reads image_pose_pairs and writes anomaly/ next to it
+      - ${DATA_ROOT:-/srv/subdron/data}:/data
+
 volumes:
   mission_db_data:
