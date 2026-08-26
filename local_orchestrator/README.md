@@ -19,9 +19,17 @@ One script per stage, one bag per invocation:
 
 ```bash
 python local_orchestrator/runners/run_extraction.py  /srv/subdron/data/sparus2-25/P1063/03_Logs/<bag>.bag
+python local_orchestrator/runners/run_anomaly.py     /srv/subdron/data/sparus2-25/P1063/02_Post_Mission/camera/<ts>/image_pose_pairs
 python local_orchestrator/runners/run_phaseformer.py /srv/subdron/data/sparus2-25/P1063/02_Post_Mission/camera/<ts>/image_pose_pairs
 python local_orchestrator/runners/run_colmap.py      /srv/subdron/data/sparus2-25/P1063/02_Post_Mission/camera/<ts>/enhanced/PHASEFORMER
 ```
+
+`run_anomaly.py` does not start a container: it calls the always-on anomaly API
+(service `anomaly-api` in `docker-compose.yml`, port 8095), which scores the images
+at `--fps` (default 1 per second of footage) and writes `scores.csv` plus heatmaps of
+the anomalous frames to `camera/<ts>/anomaly/<model>/`. Weights live on the host at
+`DATA_ROOT/_state/models/anomaly/<model>/model.ckpt` — same pattern as PHASEFORMER,
+no cloud credentials in the container.
 
 Every runner validates inputs and mounts before launching Docker, writes a job record
 to `DATA_ROOT/_state/jobs/<job_id>.json` and the full container log to
@@ -34,7 +42,9 @@ Common flags: `--tag` (image tag, default `dev`), `--force` (re-run a completed 
 `pipeline_trigger.py` makes one pass over the data tree and launches each bag's next
 stage, reading state from the job records: new bag → extraction; extracted **and
 approved** → PHASEFORMER (per approved image range); enhanced → COLMAP. Failed jobs
-are reported, never auto-retried.
+are reported, never auto-retried. Anomaly detection is a side branch: as soon as a
+bag is extracted it is launched in the background (independent of the review gate),
+so its results are available while the reviewer watches the video.
 
 The approval gate: after extraction each bag waits for a human decision. With the
 Label Studio integration active (below), the trigger creates one review task per
@@ -118,7 +128,7 @@ sudo systemctl daemon-reload && sudo systemctl enable --now subdron-pipeline-das
 | Docker images | Versions are pinned in `local_orchestrator/images.env` (edit + commit to upgrade). Apply on any machine with `./scripts/update_local_images.sh` — it pulls the pinned versions and points the local `:dev` aliases at them. Job records store the digest of every run. |
 | PHASEFORMER weights | One-time: `gcloud storage cp gs://subdron_dev/machine_learning/image_processing/weights/best.pth /srv/subdron/data/_state/models/PHASEFORMER/` (the runner prints this command if the weights are missing). |
 | Failures | The trigger never retries. Fix the cause (see the log path it prints), then re-run the stage with `--force`. |
-| Redoing a bag | `python local_orchestrator/trigger/pipeline_trigger.py --reset <stage> <bag_path>` with stage `extraction`, `review`, `phaseformer` or `colmap` — deletes that stage's records and outputs plus everything downstream (including the Label Studio task when the review is reset); the next trigger pass redoes it from there. |
+| Redoing a bag | `python local_orchestrator/trigger/pipeline_trigger.py --reset <stage> <bag_path>` with stage `extraction`, `review`, `anomaly`, `phaseformer` or `colmap` — deletes that stage's records and outputs plus everything downstream (including the Label Studio task when the review is reset); the next trigger pass redoes it from there. `anomaly` resets only itself — it is not part of the cascade. |
 
 ## Multi-user operation
 
