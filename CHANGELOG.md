@@ -3,71 +3,22 @@
 All notable changes to this project will be documented in this file.
 
 
+## [1.3.0] - 2026-08-26
+
+- Anomaly detection stage: `runners/run_anomaly.py` scores extracted images at 1 fps through the always-on anomaly API (`anomaly-api` service in `local_orchestrator/docker-compose.yml`); results in `camera/<ts>/anomaly/<model>/`, weights hosted at `_state/models/anomaly/`.
+- The trigger launches anomaly detection in the background right after extraction, independent of the review gate; `--reset anomaly` redoes only that stage.
+- Job ids use single underscores between fields (existing `__` records need renaming).
+
+
 ## [1.2.0] - 2026-08-05
 
-### Added
-- **Local orchestrator** (`local_orchestrator/`): fully offline mission processing on a
-  single Linux machine, mirroring the cloud pipeline stages.
-  - `runners/` — one CLI per stage (`run_extraction.py`, `run_phaseformer.py`,
-    `run_colmap.py`). Each validates inputs and bind-mount sources before launching
-    Docker, passes mission identity explicitly (parallel-safe outputs), writes a JSON
-    job record (`DATA_ROOT/_state/jobs/`, incl. image digest and timings) and the full
-    container log (`DATA_ROOT/_state/logs/`). GPU stages serialize on a shared lock.
-  - `trigger/pipeline_trigger.py` — level-triggered reconciliation pass (no marker
-    files): new bag → extraction; extracted **and human-approved** → PHASEFORMER (per
-    approved image range); enhanced → COLMAP. Failed jobs are reported with the last
-    error line, never auto-retried.
-  - `trigger/approve_bag_for_processing.py` — records the video-review decision
-    (approve/reject, optional frame ranges) that gates the GPU stages.
-  - `pipeline_trigger.py --reset <stage> <bag>` — redo a bag from any stage: deletes
-    that stage's records and outputs plus everything downstream (including the
-    Label Studio review task), so the next pass reprocesses from there.
-  - Label Studio review integration (`trigger/label_studio_sync.py`, with a one-time
-    `setup` subcommand): the trigger creates one review task per extracted bag and
-    converts finished annotations (timeline "Process" segments + Approve/Reject)
-    into the standard approval files. Active only when `_state/label_studio.json`
-    exists; LS outages never block a pass; the CLI approve script stays as fallback.
-  - `trigger/systemd/` — service + timer units to run the trigger every minute.
-  - `trigger/pipeline_dashboard.py` — live status dashboard on port 8090 (LAN-visible):
-    one row per bag, one colored cell per stage (done/running/failed/pending/rejected).
-    Running cells show elapsed time, a progress bar and the latest log line; running and
-    failed cells link to the full job log (served at `/log/<job_id>`); review cells link
-    to the Label Studio task (using the viewer's hostname, so links work from any
-    machine); header shows per-state counts and a GPU busy/idle badge. Stdlib HTTP
-    server, no new dependencies; own systemd unit. Corrupt job records (e.g. interrupted
-    writes) are surfaced as failures instead of crashing the trigger or the dashboard.
-  - Local mission-tracking Postgres via `docker-compose.yml` + `init_db.sql`
-    (containers log through the same `log_mission_stage` pathway as the cloud;
-    host port configurable via `MISSION_DB_PORT`).
-  - All tools use `/srv/subdron/data` as the data root (shared, group-writable — the
-    same layout on every machine, single- or multi-user); the `DATA_ROOT` env variable
-    overrides it for special cases.
-  - `scripts/setup_local_orchestrator.sh` — per-user setup: creates the shared data
-    root on the machine's first run (sudo) and joins the required groups
-    (`subdron`, `docker`, `systemd-journal`); pyenv virtualenv (subdron-utils pinned
-    to tag `v1.5.2-dev`, never `latest`); tracking DB (reused if already running,
-    port auto-detected — `MISSION_DB_PORT` exported to `~/.bashrc` only when
-    non-default).
-  - `scripts/update_local_images.sh` + `local_orchestrator/images.env` — stage image
-    versions pinned in one file; the script pulls them and points the local `:dev`
-    aliases at them.
-  - PHASEFORMER model weights are hosted at `DATA_ROOT/_state/models/` and mounted
-    into the container, so offline machines need no cloud credentials at runtime.
-
-### Changed
-- `.gitignore`: local data tree, virtualenvs and `.python-version` are ignored.
-- README split: the cloud pipeline stays in the top-level README; the local
-  orchestrator (setup, runners, approval workflow, trigger, dashboard, multi-user)
-  is documented in `local_orchestrator/README.md`.
-- Runners throttle container progress bars to one line per 10% when stdout is not a
-  terminal (keeps journald readable); the per-job log file still gets everything.
-- Trigger output reaches the journal immediately (`PYTHONUNBUFFERED=1` in the service
-  unit + per-line flush) instead of arriving minutes late in bursts.
-
-### Removed
-- `scripts/run_offline_pipeline.sh` and `scripts/test_local_pipeline.sh` — superseded
-  by the local orchestrator runners and trigger (offline) and by running the stage
-  images directly (cloud-data testing).
+- Local orchestrator (`local_orchestrator/`): fully offline mission processing mirroring the cloud stages.
+- One runner CLI per stage (extraction, PHASEFORMER, COLMAP): input/mount validation, JSON job records in `DATA_ROOT/_state/jobs/`, full logs in `_state/logs/`, shared GPU lock.
+- `pipeline_trigger.py`: level-triggered pass (new bag -> extraction; approved -> PHASEFORMER per range; enhanced -> COLMAP); failed jobs reported, never auto-retried; `--reset <stage> <bag>` redoes a bag from any stage.
+- Review gate via Label Studio (`label_studio_sync.py`, one task per bag, Approve/Reject + frame ranges) with `approve_bag_for_processing.py` as CLI fallback; systemd service + timer run the trigger every minute.
+- Status dashboard on port 8090 (per-bag stage cells, progress, log links, GPU badge); local mission-tracking Postgres via docker-compose.
+- Shared data root `/srv/subdron/data`; `setup_local_orchestrator.sh` per-user setup; stage image versions pinned in `images.env`; PHASEFORMER weights hosted at `_state/models/` (no cloud credentials at runtime).
+- Removed `run_offline_pipeline.sh` and `test_local_pipeline.sh` (superseded).
 
 
 ## [1.1.2] - 2026-08-03
