@@ -9,7 +9,7 @@ write (DATA_ROOT/_state/jobs/). For every bag under <source>/<mission>/03_Logs/*
     enhanced, no colmap record      -> runners/run_colmap.py
 
 The approval defined by approve_bag_for_processing.py. Failed jobs are
-reported but never retried automatically — re-run manually with --force.
+reported but never retried automatically — redo a stage with --reset.
 One job at a time; a lock prevents overlapping passes, so a systemd timer can
 invoke this at any interval.
 

@@ -95,7 +95,7 @@ def main() -> None:
     if not (models_dir / "best.pth").is_file():
         fail(f"PHASEFORMER weights not found: {models_dir}/best.pth\n"
              f"        One-time download (needs gcloud auth on any machine):\n"
-             f"        mkdir -p {models_dir} && gsutil cp {WEIGHTS_GS} {models_dir}/")
+             f"        mkdir -p {models_dir} && gcloud storage cp {WEIGHTS_GS} {models_dir}/")
 
     if args.dev_code:
         stage_repo = REPO_ROOT.parent / "subdron_image_processing"

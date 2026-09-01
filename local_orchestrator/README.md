@@ -34,8 +34,8 @@ no cloud credentials in the container.
 Every runner validates inputs and mounts before launching Docker, writes a job record
 to `DATA_ROOT/_state/jobs/<job_id>.json` and the full container log to
 `DATA_ROOT/_state/logs/`. GPU stages share a lock so only one runs at a time.
-Common flags: `--tag` (image tag, default `dev`), `--force` (re-run a completed job),
-`--dev-code` (bind-mount local checkouts for iterating).
+Common flags: `--tag` (image tag, default `dev`) and `--dev-code` (bind-mount
+local checkouts for iterating).
 
 ## Automation (`local_orchestrator/trigger/`)
 
@@ -95,12 +95,10 @@ From then on the trigger and the dashboard show "in review (task N)" for bags wi
 an open task. Removing `_state/label_studio.json` disables the integration; the
 pipeline never depends on Label Studio being up (failures are logged and skipped).
 
-To run the trigger automatically every minute, install the systemd units from
-`local_orchestrator/trigger/systemd/` (edit paths/user in the .service first):
+The trigger timer and the dashboard are installed as systemd units by
+`setup_local_orchestrator.sh` on the machine's first run, works even after reboots. The unit files live in `local_orchestrator/trigger/systemd/`.
 
 ```bash
-sudo cp local_orchestrator/trigger/systemd/subdron-pipeline-trigger.* /etc/systemd/system/
-sudo systemctl daemon-reload && sudo systemctl enable --now subdron-pipeline-trigger.timer
 journalctl -u subdron-pipeline-trigger -f          # watch trigger live
 python local_orchestrator/trigger/pipeline_trigger.py --dry-run   # status of every bag
 ```
@@ -113,11 +111,8 @@ Running cells show elapsed time and the latest progress line; failed cells show
 the last error and the log path. Rendered from the job records on every request
 (auto-refreshes every 10 s), reachable from any machine on the LAN:
 
-```bash
-sudo cp local_orchestrator/trigger/systemd/subdron-pipeline-dashboard.service /etc/systemd/system/
-sudo systemctl daemon-reload && sudo systemctl enable --now subdron-pipeline-dashboard
-# open http://<machine>:8090   (port: PIPELINE_DASHBOARD_PORT)
-```
+Open `http://<machine>:8090` (port: `PIPELINE_DASHBOARD_PORT`). Installed by the
+setup script; after changing its code, `sudo systemctl restart subdron-pipeline-dashboard`.
 
 ## Environment & machine prerequisites
 
@@ -127,8 +122,8 @@ sudo systemctl daemon-reload && sudo systemctl enable --now subdron-pipeline-das
 | Tracking DB port | Default 5433. `MISSION_DB_PORT` is only needed when the DB runs on another port — the setup script detects this and writes the export to `~/.bashrc`. |
 | Docker images | Versions are pinned in `local_orchestrator/images.env` (edit + commit to upgrade). Apply on any machine with `./scripts/update_local_images.sh` — it pulls the pinned versions and points the local `:dev` aliases at them. Job records store the digest of every run. |
 | PHASEFORMER weights | One-time: `gcloud storage cp gs://subdron_dev/machine_learning/image_processing/weights/best.pth /srv/subdron/data/_state/models/PHASEFORMER/` (the runner prints this command if the weights are missing). |
-| Failures | The trigger never retries. Fix the cause (see the log path it prints), then re-run the stage with `--force`. |
-| Redoing a bag | `python local_orchestrator/trigger/pipeline_trigger.py --reset <stage> <bag_path>` with stage `extraction`, `review`, `anomaly`, `phaseformer` or `colmap` — deletes that stage's records and outputs plus everything downstream (including the Label Studio task when the review is reset); the next trigger pass redoes it from there. `anomaly` resets only itself — it is not part of the cascade. |
+| Failures | The trigger never retries. Fix the cause (the dashboard and the trigger output link to the log), then redo the stage — see Reprocessing. |
+| Reprocessing | `python local_orchestrator/trigger/pipeline_trigger.py --reset <stage> <bag_path>` with stage `extraction`, `review`, `anomaly`, `phaseformer` or `colmap` — deletes that stage's records and outputs plus everything downstream (including the Label Studio task when the review is reset); the next trigger pass redoes it from there. `anomaly` resets only itself — it is not part of the cascade. |
 
 ## Multi-user operation
 

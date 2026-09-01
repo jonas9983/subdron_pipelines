@@ -93,6 +93,21 @@ if [ "$DB_PORT" != "5433" ] && ! grep -q "^export MISSION_DB_PORT=" ~/.bashrc 2>
     echo "--- Wrote MISSION_DB_PORT=$DB_PORT to ~/.bashrc (new terminals pick it up) ---"
 fi
 
+# Install the trigger timer + dashboard once per machine (first user to run setup),
+# filling in the per-machine fields from this environment.
+if [ ! -f /etc/systemd/system/subdron-pipeline-trigger.service ]; then
+    echo "--- Installing systemd units (sudo) ---"
+    for f in "$ORCH"/trigger/systemd/*; do
+        sed -e "s|^User=.*|User=$USER|" \
+            -e "s|^WorkingDirectory=.*|WorkingDirectory=$REPO_ROOT|" \
+            -e "s|^ExecStart=[^ ]*python|ExecStart=$PYBIN|" "$f" \
+            | sudo tee "/etc/systemd/system/$(basename "$f")" > /dev/null
+    done
+    sudo systemctl daemon-reload
+    sudo systemctl enable --now subdron-pipeline-trigger.timer subdron-pipeline-dashboard
+    echo "    trigger runs every minute; dashboard: http://$(hostname):8090"
+fi
+
 echo ""
 echo "Setup complete. Data root: $DATA_ROOT"
 [ -n "$NEW_GROUPS" ] && echo "Group changes ($NEW_GROUPS ) take effect after logging out and back in."
