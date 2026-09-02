@@ -23,11 +23,11 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from pipeline_helpers import resolve_data_root
+from pipeline_helpers import anomaly_api_health, resolve_data_root
 from pipeline_trigger import bag_stages, find_bags
 from label_studio_sync import load_config as load_ls_config
 
-COLUMNS = ("MISSION", "TIMESTAMP", "EXTRACT", "REVIEW", "ENHANCE", "COLMAP")
+COLUMNS = ("MISSION", "TIMESTAMP", "EXTRACT", "ANOMALY", "REVIEW", "ENHANCE", "COLMAP")
 PCT_RE = re.compile(r"(\d+)%")
 CSS = """
 :root { --bg:#f6f7f9; --card:#ffffff; --ink:#1f2430; --muted:#6b7280; --line:#e5e7eb;
@@ -69,15 +69,32 @@ def read_record(jobs_dir: Path, job_id: str) -> dict | None:
         return None
 
 
-def last_log_line(record: dict | None) -> str:
+def log_tail(record: dict | None, nbytes: int = 4096) -> list[str]:
     log = (record or {}).get("outputs", {}).get("log")
     if not log or not Path(log).exists():
-        return ""
+        return []
     with open(log, "rb") as f:
         f.seek(0, 2)
-        f.seek(max(0, f.tell() - 4096))
-        lines = f.read().decode(errors="replace").splitlines()
-    return next((ln.strip() for ln in reversed(lines) if ln.strip()), "")
+        f.seek(max(0, f.tell() - nbytes))
+        return [ln.strip() for ln in f.read().decode(errors="replace").splitlines() if ln.strip()]
+
+
+def last_log_line(record: dict | None) -> str:
+    return next(iter(reversed(log_tail(record))), "")
+
+
+ERROR_RE = re.compile(r"Batch failed|Error|Traceback", re.I)
+
+
+def progress_detail(record: dict | None) -> str:
+    """Latest progress line if there is one (tracebacks in between would hide it),
+    flagged when the tail also contains errors."""
+    tail = log_tail(record, 16384)
+    progress = next((ln for ln in reversed(tail) if PCT_RE.search(ln)), None)
+    detail = progress or (tail[-1] if tail else "")
+    if any(ERROR_RE.search(ln) for ln in tail):
+        detail = "errors in log · " + detail
+    return detail
 
 
 def elapsed_minutes(record: dict | None) -> int | None:
@@ -100,7 +117,7 @@ def job_cell(jobs_dir: Path, job_id: str, status: str | None) -> dict:
     record = read_record(jobs_dir, job_id)
     if status == "running":
         mins = elapsed_minutes(record)
-        detail = last_log_line(record)
+        detail = progress_detail(record)
         pct = PCT_RE.search(detail)
         return {**cell, "label": f"running {mins}min" if mins is not None else "running",
                 "cls": "running", "detail": detail, "href": f"/log/{job_id}",
@@ -108,6 +125,30 @@ def job_cell(jobs_dir: Path, job_id: str, status: str | None) -> dict:
     tail = ((record or {}).get("error_tail") or "").strip().splitlines()
     last = next((ln.strip() for ln in reversed(tail) if ln.strip()), "")
     return {**cell, "label": "failed", "cls": "failed", "detail": last, "href": f"/log/{job_id}"}
+
+
+def anomaly_cell(jobs_dir: Path, stages: dict, api_up: bool) -> dict:
+    """Side branch of extraction: shows why it is not running when the API is down,
+    and the anomalous-frame count once done."""
+    job_id = f"{stages['job_id']}_anomaly"
+    status = stages["anomaly"]
+    if status is None:
+        if stages["extract"] != "done":
+            return {"label": "-", "cls": "pending", "detail": "", "href": None, "pct": None}
+        if not api_up:
+            return {"label": "api down", "cls": "pending", "href": None, "pct": None,
+                    "detail": "start anomaly-api (docker compose)"}
+        return {"label": "queued", "cls": "pending", "detail": "", "href": None, "pct": None}
+    cell = job_cell(jobs_dir, job_id, status)
+    if status == "done":
+        record = read_record(jobs_dir, job_id)
+        try:  # the API prints a one-line JSON summary as its last output
+            summary = json.loads(last_log_line(record))
+            cell["detail"] = (f"{summary['anomaly_count']}/{summary['processed']} frames anomalous "
+                              f"({record.get('model', '?')})")
+        except (json.JSONDecodeError, KeyError, TypeError):
+            cell["detail"] = (record or {}).get("outputs", {}).get("anomaly_dir", "")
+    return cell
 
 
 def review_cell(stages: dict, ls_cfg: dict | None, host: str) -> dict:
@@ -151,20 +192,23 @@ def render(data_root: Path, host: str = "") -> str:
     state_dir = data_root / "_state"
     jobs_dir, approvals_dir = state_dir / "jobs", state_dir / "approvals"
     ls_cfg = load_ls_config(state_dir)
+    anomaly_up = anomaly_api_health(timeout=1.0) is not None
     rows, gpu_busy = [], False
     counts = {"complete": 0, "failed": 0, "running": 0, "in review": 0, "pending": 0}
     for bag in find_bags(data_root):
         stages = bag_stages(bag, jobs_dir, approvals_dir)
         if stages is None:
             continue
-        cells = [
+        main_cells = [
             job_cell(jobs_dir, stages["job_id"], stages["extract"]),
             review_cell(stages, ls_cfg, host),
             job_cell(jobs_dir, f"{stages['job_id']}_phaseformer", stages["enhance"]),
             job_cell(jobs_dir, f"{stages['job_id']}_colmap-spatial", stages["colmap"]),
         ]
+        # anomaly is a side branch: shown, but it never decides the bag's summary state
+        cells = main_cells[:1] + [anomaly_cell(jobs_dir, stages, anomaly_up)] + main_cells[1:]
         gpu_busy = gpu_busy or "running" in (stages["enhance"], stages["colmap"])
-        classes = [c["cls"] for c in cells]
+        classes = [c["cls"] for c in main_cells]
         if "failed" in classes:
             counts["failed"] += 1
         elif "running" in classes:
@@ -184,7 +228,7 @@ def render(data_root: Path, host: str = "") -> str:
     gpu = ('<span class="gpu busy">GPU busy</span>' if gpu_busy
            else '<span class="gpu idle">GPU free</span>')
     header_cells = "".join(f"<th>{c}</th>" for c in COLUMNS)
-    body = "".join(rows) or '<tr><td colspan="6">No bags found</td></tr>'
+    body = "".join(rows) or '<tr><td colspan="7">No bags found</td></tr>'
     return f"""<!DOCTYPE html><html><head><meta charset="utf-8">
 <meta http-equiv="refresh" content="10"><title>SUBDRON Pipeline</title>
 <style>{CSS}</style></head><body>

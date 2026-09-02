@@ -16,13 +16,13 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-import urllib.error
-import urllib.request
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from pipeline_helpers import (
+    ANOMALY_API_URL,
     CONTAINER_DATA,
+    anomaly_api_health,
     check_existing_record,
     fail,
     resolve_data_root,
@@ -38,16 +38,12 @@ except ImportError:
         "        Run the one-time setup first:  ./scripts/setup_local_orchestrator.sh"
     )
 
-DEFAULT_API_URL = "http://localhost:8095"
-
-
 def check_api(api_url: str) -> dict:
-    try:
-        with urllib.request.urlopen(f"{api_url}/health", timeout=5) as resp:
-            return json.loads(resp.read())
-    except (urllib.error.URLError, OSError) as e:
-        fail(f"Anomaly API not reachable at {api_url} ({e}).\n"
+    health = anomaly_api_health(api_url, timeout=5)
+    if health is None:
+        fail(f"Anomaly API not reachable at {api_url}.\n"
              f"        Start it with:  docker compose -f local_orchestrator/docker-compose.yml up -d anomaly-api")
+    return health
 
 
 def main() -> None:
@@ -59,7 +55,8 @@ def main() -> None:
     parser.add_argument("--fps", type=float, default=1.0,
                         help="Frames per second of footage to analyse (0 = every frame)")
     parser.add_argument("--save-heatmaps", default="anomalous", choices=["anomalous", "all", "none"])
-    parser.add_argument("--api-url", default=DEFAULT_API_URL, help=f"Anomaly API base URL (default: {DEFAULT_API_URL})")
+    parser.add_argument("--api-url", default=ANOMALY_API_URL,
+                        help=f"Anomaly API base URL (default: {ANOMALY_API_URL}; $ANOMALY_API_URL overrides)")
     parser.add_argument("--force", action="store_true", help="Re-run a completed job")
     args = parser.parse_args()
 

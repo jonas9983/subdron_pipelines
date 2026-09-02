@@ -19,6 +19,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 CONTAINER_DATA = "/data"
+ANOMALY_API_URL = os.getenv("ANOMALY_API_URL", "http://localhost:8095")
 
 DB_ENV = {
     "ENABLE_DB_LOGGING": "true",
@@ -29,6 +30,16 @@ DB_ENV = {
     "DB_POSTGRES_PASSWORD": "subdron_local",
     "DB_POSTGRES_DB": "mission_data",
 }
+
+
+def anomaly_api_health(api_url: str = ANOMALY_API_URL, timeout: float = 3.0) -> dict | None:
+    """The anomaly API's /health payload, or None when it is not reachable."""
+    import urllib.request
+    try:
+        with urllib.request.urlopen(f"{api_url}/health", timeout=timeout) as resp:
+            return json.loads(resp.read())
+    except (OSError, ValueError):
+        return None
 
 
 def fail(msg: str) -> None:
@@ -138,12 +149,34 @@ def docker_run_base(name: str, mounts: list[tuple[Path, str]], env: dict | None 
     return cmd
 
 
-def run_job(record: dict, cmd: list[str], record_path: Path, log_path: Path) -> int:
-    """Write the running record, stream the container to log+stdout, finalize, return exit code."""
+def gpu_memory_mib() -> int | None:
+    """Total memory of GPU 0 in MiB, or None without a usable nvidia-smi."""
+    result = subprocess.run(["nvidia-smi", "--query-gpu=memory.total", "--format=csv,noheader,nounits"],
+                            capture_output=True, text=True)
+    try:
+        return int(result.stdout.strip().splitlines()[0]) if result.returncode == 0 else None
+    except (IndexError, ValueError):
+        return None
+
+
+def mark_failed(record: dict, record_path: Path, message: str) -> None:
+    """Finalize a record as failed after the container itself exited 0 (post-run validation)."""
+    record.update(status="failed", ended_utc=utc_now(), exit_code=record.get("exit_code") or 2,
+                  error_tail=message)
+    record_path.write_text(json.dumps(record, indent=2))
+    print(f"[{record['job_id']}] failed: {message.strip().splitlines()[0]}")
+
+
+def run_job(record: dict, cmd: list[str], record_path: Path, log_path: Path,
+            append_log: bool = False) -> int:
+    """Write the running record, stream the container to log+stdout, finalize, return exit code.
+    append_log=True continues an existing job (retry within the same record): the log is
+    appended to and the original start time is kept."""
     for d in (record_path.parent, log_path.parent):
         d.mkdir(parents=True, exist_ok=True)
+    started = record.get("started_utc") if append_log else None
     record.update(runner_pid=os.getpid(), status="running",
-                  started_utc=utc_now(), ended_utc=None,
+                  started_utc=started or utc_now(), ended_utc=None,
                   duration_seconds=None, exit_code=None, error_tail=None)
     record_path.write_text(json.dumps(record, indent=2))
 
@@ -154,7 +187,7 @@ def run_job(record: dict, cmd: list[str], record_path: Path, log_path: Path) -> 
     progress_re = re.compile(r"(\d+)%\|")
     echo_bars = sys.stdout.isatty()
     last_pct = -1
-    with log_path.open("w") as log_file:
+    with log_path.open("a" if append_log else "w") as log_file:
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
                                 stderr=subprocess.STDOUT, text=True)
         for line in proc.stdout:

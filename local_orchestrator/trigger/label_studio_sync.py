@@ -109,8 +109,11 @@ def _parse_annotation(annotations: list[dict]) -> tuple[bool, list[str] | None] 
             value = item.get("value", {})
             choices += value.get("choices", [])
             for r in value.get("ranges", []):
-                # the stage requires the full start:end:step form
-                ranges.append(f"{int(r['start'])}:{int(r['end'])}:1")
+                # Timeline frames are 1-based and inclusive; the stage slices the
+                # sorted image list Python-style (0-based, end exclusive), so frames
+                # [s, e] are images [s-1:e]. Full start:end:step form required.
+                start = max(int(r["start"]) - 1, 0)
+                ranges.append(f"{start}:{int(r['end'])}:1")
         if "Reject" in choices:
             return False, None
         # Only an explicit Approve triggers processing — segments alone are a draft.

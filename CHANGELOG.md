@@ -3,11 +3,17 @@
 All notable changes to this project will be documented in this file.
 
 
-## [1.3.0] - 2026-08-26
+## [1.3.0] - 2026-09-02
 
 - Anomaly detection stage: `runners/run_anomaly.py` scores extracted images at 1 fps through the always-on anomaly API (`anomaly-api` service in `local_orchestrator/docker-compose.yml`); results in `camera/<ts>/anomaly/<model>/`, weights hosted at `_state/models/anomaly/`.
-- The trigger launches anomaly detection in the background right after extraction, independent of the review gate; `--reset anomaly` redoes only that stage.
-- Job ids use single underscores between fields (existing `__` records need renaming).
+- The trigger launches anomaly detection in the background right after extraction, independent of the review gate; it checks the API once per pass and skips the stage with a single warning when it is down; `--reset anomaly` redoes only that stage. Runner output in `_state/logs/<job_id>_anomaly.launch.log`.
+- Dashboard: ANOMALY column ("api down" / queued / running / done with the anomalous-frame count), a side branch that never affects the bag's summary state.
+- Job ids use single underscores between fields (existing `__` records need renaming or a reset).
+- `ANOMALY_API_URL` (env override) shared by trigger, runner and dashboard.
+- PHASEFORMER runner: batch size defaults from GPU memory (2 / 4 / 8), `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`, and post-run output verification — images skipped by failed batches (CUDA OOM) are resumed with a halved batch, and the job is marked failed if any remain missing instead of silently "done".
+- Label Studio ranges: 1-based inclusive timeline frames are converted to the stage's 0-based slices (the first image of every range was skipped before).
+- Dashboard running cells show the latest progress line (not a traceback line) and flag "errors in log".
+- Docs: `local_orchestrator/README.md` reduced to overview + troubleshooting; full description in `release.md` (source for the Confluence release page).
 
 
 ## [1.2.0] - 2026-08-05

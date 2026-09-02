@@ -8,6 +8,11 @@ Input is the image_pose_pairs directory produced by run_extraction.py (absolute,
 or relative to DATA_ROOT). Enhanced images land in the mission tree under
 camera/<ts>/enhanced/PHASEFORMER, videos under camera/videos/<ts>/PHASEFORMER.
 Holds a GPU lock so only one GPU job runs at a time.
+
+The stage skips a whole batch when it runs out of GPU memory and still exits 0, so
+the batch size defaults from the GPU's memory and, after the run, every image in the
+range is checked: missing ones are retried with a halved batch (the stage resumes,
+processing only what is missing) and the job is marked failed if any remain.
 """
 
 from __future__ import annotations
@@ -27,7 +32,9 @@ from pipeline_helpers import (
     check_mounts,
     docker_run_base,
     fail,
+    gpu_memory_mib,
     image_digest,
+    mark_failed,
     resolve_data_root,
     resolve_under_data_root,
     run_job,
@@ -43,6 +50,29 @@ except ImportError:
 
 IMAGE_NAME = "subdron-image-processing"
 WEIGHTS_GS = "gs://subdron_dev/machine_learning/image_processing/weights/best.pth"
+IMAGE_GLOBS = ("*.jpg", "*.png")
+
+
+def default_batch_size(device: str) -> int:
+    """8 on the big cloud GPUs; smaller on desktop cards, where batch 8 at 720p OOMs."""
+    mib = gpu_memory_mib() if device == "gpu" else None
+    if mib is None:
+        return 8
+    return 2 if mib < 10_000 else 4 if mib < 16_000 else 8
+
+
+def list_images(directory: Path) -> list[str]:
+    return sorted(p.name for g in IMAGE_GLOBS for p in directory.glob(g))
+
+
+def expected_outputs(input_dir: Path, image_range: str | None) -> list[str]:
+    """Image names the stage should produce: same slicing as the stage (start:end[:step])."""
+    names = list_images(input_dir)
+    if not image_range:
+        return names
+    parts = [int(x) if x else None for x in image_range.split(":")]
+    parts += [None] * (3 - len(parts))
+    return names[slice(*parts)]
 
 
 def main() -> None:
@@ -50,7 +80,9 @@ def main() -> None:
     parser.add_argument("input_dir", help="image_pose_pairs dir (absolute, or relative to DATA_ROOT)")
     parser.add_argument("--data-root", help="Data root (default: /srv/subdron/data; $DATA_ROOT overrides)")
     parser.add_argument("--tag", default="dev", help="Image tag (default: dev)")
-    parser.add_argument("--batch-size", type=int, default=8)
+    parser.add_argument("--batch-size", type=int, default=None,
+                        help="Images per forward pass (default: from GPU memory — 2 below 10 GB, "
+                             "4 below 16 GB, else 8)")
     parser.add_argument("--video-fps", type=int, default=30)
     parser.add_argument("--device", choices=["gpu", "cpu"], default="gpu")
     parser.add_argument("--image-range", help="Only process images in range start:end[:step]")
@@ -117,23 +149,29 @@ def main() -> None:
     check_mounts(mounts)
     digest = image_digest(image)
 
-    cmd = docker_run_base(
-        name=f"phaseformer-{mission_id}-{timestamp}",
-        mounts=mounts,
-        gpu=args.device == "gpu",
-        workdir=workdir,
-        entrypoint="python",
-    )
-    cmd += [
-        image,
-        "main.py", "PHASEFORMER",
-        "--input_dir", f"{CONTAINER_DATA}/{input_rel}",
-        "--batch_size", str(args.batch_size),
-        "--device", args.device,
-        "--resume", "--keep_input",
-        *(["--image-range", args.image_range] if args.image_range else []),
-        "--create-video", "--video-fps", str(args.video_fps),
-    ]
+    batch_size = args.batch_size or default_batch_size(args.device)
+
+    def build_cmd(batch: int) -> list[str]:
+        cmd = docker_run_base(
+            name=f"phaseformer-{mission_id}-{timestamp}",
+            mounts=mounts,
+            # expandable segments avoid the allocator fragmentation that turns a
+            # near-full card into "CUDA out of memory" mid-run
+            env={"PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"},
+            gpu=args.device == "gpu",
+            workdir=workdir,
+            entrypoint="python",
+        )
+        return cmd + [
+            image,
+            "main.py", "PHASEFORMER",
+            "--input_dir", f"{CONTAINER_DATA}/{input_rel}",
+            "--batch_size", str(batch),
+            "--device", args.device,
+            "--resume", "--keep_input",
+            *(["--image-range", args.image_range] if args.image_range else []),
+            "--create-video", "--video-fps", str(args.video_fps),
+        ]
 
     if args.device == "gpu":
         state_dir.mkdir(parents=True, exist_ok=True)
@@ -149,6 +187,8 @@ def main() -> None:
         "image": image,
         "image_digest": digest,
         "dev_code": args.dev_code,
+        "batch_size": batch_size,
+        "image_range": args.image_range,
         "outputs": {
             "enhanced_dir": str(enhanced_parent / "PHASEFORMER"),
             "videos_dir": str(videos_dir),
@@ -156,10 +196,33 @@ def main() -> None:
         },
     }
 
-    n_images = len(list(input_dir.glob("*.jpg")) + list(input_dir.glob("*.png")))
-    print(f"[{job_id}] starting PHASEFORMER on {n_images} images ({args.device})")
+    expected = expected_outputs(input_dir, args.image_range)
+    enhanced_dir = enhanced_parent / "PHASEFORMER"
+    print(f"[{job_id}] starting PHASEFORMER on {len(expected)} images "
+          f"({args.device}, batch size {batch_size})")
     print(f"[{job_id}] image {digest}")
-    sys.exit(run_job(record, cmd, record_path, log_path))
+
+    attempt = 0
+    while True:
+        code = run_job(record, build_cmd(batch_size), record_path, log_path, append_log=attempt > 0)
+        if code != 0:
+            sys.exit(code)
+        done = set(list_images(enhanced_dir))
+        missing = [n for n in expected if n not in done]
+        if not missing:
+            print(f"[{job_id}] all {len(expected)} images enhanced -> {enhanced_dir}")
+            sys.exit(0)
+        if batch_size <= 1:
+            mark_failed(record, record_path,
+                        f"{len(missing)} of {len(expected)} images were not enhanced even at batch size 1 "
+                        f"(the stage skips a batch when it fails, typically CUDA out of memory — see the log). "
+                        f"First missing: {missing[0]}")
+            sys.exit(1)
+        attempt += 1
+        batch_size //= 2
+        record["batch_size"] = batch_size
+        print(f"[{job_id}] {len(missing)} of {len(expected)} images missing after the run "
+              f"(batches skipped, usually CUDA out of memory) — resuming with batch size {batch_size}")
 
 
 if __name__ == "__main__":

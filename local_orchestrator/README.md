@@ -1,140 +1,192 @@
 # Local Orchestrator (offline processing)
 
-For machines with no Google Cloud access, `local_orchestrator/` runs pipeline stages
-fully offline against a shared local data tree at **`/srv/subdron/data`** and a local
-Postgres for mission tracking (same `log_mission_stage` pathway the cloud services use).
+Runs the SUBDRON processing stages on a machine with no cloud access. Bags dropped
+into a shared data tree are picked up automatically, a human approves each bag in
+Label Studio before the GPU stages run, and a web dashboard shows the state of every
+bag. Design notes, installation details and the release description live in
+[`release.md`](../release.md); this file is the day-to-day reference.
 
-One-time setup per user — creates the shared data root on the machine's first run
-(sudo), joins the required groups, builds the pyenv virtualenv `pipelines` (or `.venv`
-fallback) with subdron-utils pinned to a release tag, and starts (or adopts) the
-tracking DB:
+## How it works
+
+```
+/srv/subdron/data/<robot>/<mission>/03_Logs/<bag>.bag
+        │   every minute: pipeline_trigger.py (systemd timer) makes one pass
+        ▼
+   EXTRACTION ── images + poses + review video ──►  ANOMALY (background side branch)
+        │
+        ▼
+     REVIEW ───── one Label Studio task per bag: mark segments, submit Approve / Reject
+        │
+        ▼
+  PHASEFORMER ── enhanced images, one run per approved range        (GPU)
+        │
+        ▼
+     COLMAP ───── 3D reconstruction                                 (GPU)
+```
+
+- State lives in **job records**: `_state/jobs/<job_id>.json`, with
+  `job_id = <robot>_<mission>_<timestamp>` and a stage suffix (`_anomaly`,
+  `_phaseformer`, `_colmap-spatial`). No record means "not started", so the trigger
+  launches the next missing stage. Failed jobs are reported, **never retried** on their own.
+- **Nothing runs on the GPU until the Approve choice is submitted** in Label Studio.
+  Timeline segments alone are a draft. Timeline frame N is image N-1 (the videos are
+  rendered at 30 fps from the extracted images); the sync converts the ranges.
+- Anomaly detection needs only the extracted images, so it starts right after
+  extraction and never blocks the review or the GPU stages.
+
+## Where things are
+
+| What | Where |
+| :--- | :--- |
+| Data root | `/srv/subdron/data` (`DATA_ROOT` overrides) |
+| Bags in | `<root>/<robot>/<mission>/03_Logs/<mission>_<YYYY-MM-DD-HH-MM-SS>.bag` |
+| Extraction out | `<mission>/02_Post_Mission/camera/<ts>/image_pose_pairs`, `navigation/<ts>/`, `camera/videos/<ts>/original/` |
+| Anomaly out | `<mission>/02_Post_Mission/camera/<ts>/anomaly/<model>/` (`scores.csv` + heatmaps) |
+| Enhanced images | `<mission>/02_Post_Mission/camera/<ts>/enhanced/PHASEFORMER/` |
+| COLMAP results | `<mission>/02_Post_Mission/results/colmap/runs/<ts>/` |
+| Job records, logs | `<root>/_state/jobs/`, `<root>/_state/logs/<job_id>.log` |
+| Approvals, LS task ids | `<root>/_state/approvals/`, `<root>/_state/ls_tasks/` |
+| Model weights | `<root>/_state/models/PHASEFORMER/`, `<root>/_state/models/anomaly/<model>/` |
+| Dashboard | `http://<machine>:8090` |
+| Label Studio | `http://<machine>:8080`, project "SUBDRON bag review" |
+| Anomaly API | `http://localhost:8095` (compose service `anomaly-api`) |
+| Code | `runners/` one script per stage · `trigger/` trigger, dashboard, Label Studio sync, CLI approval |
+
+## Setup (once per user)
 
 ```bash
 ./scripts/setup_local_orchestrator.sh
 ```
 
-## Stage runners (`local_orchestrator/runners/`)
+Creates the data root, joins the groups, builds the Python env, starts the tracking DB
+and, for the first user on a machine, installs the trigger timer and the dashboard as
+systemd units. Label Studio is connected once per machine: see "Label Studio setup"
+in `release.md`.
 
-One script per stage, one bag per invocation:
+## Troubleshooting
 
-```bash
-python local_orchestrator/runners/run_extraction.py  /srv/subdron/data/sparus2-25/P1063/03_Logs/<bag>.bag
-python local_orchestrator/runners/run_anomaly.py     /srv/subdron/data/sparus2-25/P1063/02_Post_Mission/camera/<ts>/image_pose_pairs
-python local_orchestrator/runners/run_phaseformer.py /srv/subdron/data/sparus2-25/P1063/02_Post_Mission/camera/<ts>/image_pose_pairs
-python local_orchestrator/runners/run_colmap.py      /srv/subdron/data/sparus2-25/P1063/02_Post_Mission/camera/<ts>/enhanced/PHASEFORMER
-```
+Run the Python commands below from the repo root with the `pipelines` environment
+active. `MISSION_DB_PORT` is only needed when the tracking DB is not on port 5433;
+the setup script writes the export to `~/.bashrc`.
 
-`run_anomaly.py` does not start a container: it calls the always-on anomaly API
-(service `anomaly-api` in `docker-compose.yml`, port 8095), which scores the images
-at `--fps` (default 1 per second of footage) and writes `scores.csv` plus heatmaps of
-the anomalous frames to `camera/<ts>/anomaly/<model>/`. Weights live on the host at
-`DATA_ROOT/_state/models/anomaly/<model>/model.ckpt` — same pattern as PHASEFORMER,
-no cloud credentials in the container.
-
-Every runner validates inputs and mounts before launching Docker, writes a job record
-to `DATA_ROOT/_state/jobs/<job_id>.json` and the full container log to
-`DATA_ROOT/_state/logs/`. GPU stages share a lock so only one runs at a time.
-Common flags: `--tag` (image tag, default `dev`) and `--dev-code` (bind-mount
-local checkouts for iterating).
-
-## Automation (`local_orchestrator/trigger/`)
-
-`pipeline_trigger.py` makes one pass over the data tree and launches each bag's next
-stage, reading state from the job records: new bag → extraction; extracted **and
-approved** → PHASEFORMER (per approved image range); enhanced → COLMAP. Failed jobs
-are reported, never auto-retried. Anomaly detection is a side branch: as soon as a
-bag is extracted it is launched in the background (independent of the review gate),
-so its results are available while the reviewer watches the video.
-
-The approval gate: after extraction each bag waits for a human decision. With the
-Label Studio integration active (below), the trigger creates one review task per
-extracted bag — watch the video there and mark the segments worth processing on the
-timeline ("Process" label). Segments alone are a draft: **nothing runs until the
-Approve choice is selected and the annotation submitted** (Reject skips the GPU
-stages). The next trigger pass then converts it into the approval — timeline frames
-map 1:1 to image indices, since the videos are rendered at 30 fps from the extracted
-images. The CLI fallback records the same decision by hand:
+### What is the pipeline doing right now?
 
 ```bash
-python local_orchestrator/trigger/approve_bag_for_processing.py /srv/subdron/data/sparus2-25/P1063/03_Logs/<bag>.bag --ranges 0:500 1400:2100
-# or: --reject
+python local_orchestrator/trigger/pipeline_trigger.py --dry-run       # every bag: next action, or why it waits
+journalctl -u subdron-pipeline-trigger -f                              # live trigger output, one pass per minute
+journalctl -u subdron-pipeline-trigger --since "1 hour ago"
+systemctl status subdron-pipeline-trigger.timer subdron-pipeline-dashboard
 ```
 
-### Label Studio review setup (one-time per machine)
+### The dashboard shows something different from the trigger
 
-1. In the Label Studio compose stack: pin a current image (replace `build: .` +
-   `image: ...:latest` with `image: heartexlabs/label-studio:1.23.0` on every
-   service using it), make sure the app service has
-   `LABEL_STUDIO_LOCAL_FILES_SERVING_ENABLED=true`, and mount the data root
-   read-only under its `LABEL_STUDIO_LOCAL_FILES_DOCUMENT_ROOT`, e.g. with
-   document root `/label-studio`:
-   ```yaml
-   volumes:
-     - /srv/subdron/data:/label-studio/subdron_data:ro
-   ```
-   Back up its DB, then update:
-   ```bash
-   docker compose exec db pg_dump -U postgres postgres > ls_backup.sql
-   docker compose pull && docker compose up -d
-   ```
-2. Get an API token from the LS UI (Account & Settings → Access Token). On LS ≥ 1.17
-   the organization setting "Legacy Tokens" must be enabled
-   (Organization → API Tokens Settings) for `Token` auth — installations upgraded
-   from older versions already have it on.
-3. Connect the pipeline (creates the "SUBDRON bag review" project and saves the
-   connection to `_state/label_studio.json`). `--video-prefix` is the data root's
-   path inside the LS document root — for the mount above:
-   ```bash
-   python local_orchestrator/trigger/label_studio_sync.py setup \
-       --url http://localhost:8080 --video-prefix subdron_data
-   ```
-   The token is read from the `LABEL_STUDIO_TOKEN` environment variable
-   (or passed explicitly with `--token`).
-
-From then on the trigger and the dashboard show "in review (task N)" for bags with
-an open task. Removing `_state/label_studio.json` disables the integration; the
-pipeline never depends on Label Studio being up (failures are logged and skipped).
-
-The trigger timer and the dashboard are installed as systemd units by
-`setup_local_orchestrator.sh` on the machine's first run, works even after reboots. The unit files live in `local_orchestrator/trigger/systemd/`.
+The dashboard loads the code once at start. After **every `git pull`** or code change:
 
 ```bash
-journalctl -u subdron-pipeline-trigger -f          # watch trigger live
-python local_orchestrator/trigger/pipeline_trigger.py --dry-run   # status of every bag
+sudo systemctl restart subdron-pipeline-dashboard
 ```
 
-## Monitoring (`local_orchestrator/trigger/pipeline_dashboard.py`)
+The trigger needs nothing: each pass is a fresh process and picks up new code.
 
-A live status dashboard — one row per bag, one colored cell per stage
-(green done · yellow running · red failed · blue pending · grey rejected).
-Running cells show elapsed time and the latest progress line; failed cells show
-the last error and the log path. Rendered from the job records on every request
-(auto-refreshes every 10 s), reachable from any machine on the LAN:
+### Redo a stage
 
-Open `http://<machine>:8090` (port: `PIPELINE_DASHBOARD_PORT`). Installed by the
-setup script; after changing its code, `sudo systemctl restart subdron-pipeline-dashboard`.
+```bash
+python local_orchestrator/trigger/pipeline_trigger.py --reset <stage> <bag.bag>
+```
 
-## Environment & machine prerequisites
+| `<stage>` | Deletes | Then the next pass |
+| :--- | :--- | :--- |
+| `extraction` | everything for the bag: outputs, records, approval, Label Studio task | re-extracts and creates a new review task |
+| `review` | approval, Label Studio task, PHASEFORMER and COLMAP outputs | creates a new review task |
+| `phaseformer` | PHASEFORMER and COLMAP outputs and records | re-runs PHASEFORMER with the existing approval |
+| `colmap` | COLMAP outputs and record | re-runs COLMAP |
+| `anomaly` | anomaly outputs and record only (not part of the cascade) | re-scores the images |
 
-| What | How |
-| :--- | :--- |
-| Data root | `/srv/subdron/data` (the `DATA_ROOT` env variable overrides it for special cases). Bags go in `/srv/subdron/data/<robot>/<mission>/03_Logs/*.bag`. |
-| Tracking DB port | Default 5433. `MISSION_DB_PORT` is only needed when the DB runs on another port — the setup script detects this and writes the export to `~/.bashrc`. |
-| Docker images | Versions are pinned in `local_orchestrator/images.env` (edit + commit to upgrade). Apply on any machine with `./scripts/update_local_images.sh` — it pulls the pinned versions and points the local `:dev` aliases at them. Job records store the digest of every run. |
-| PHASEFORMER weights | One-time: `gcloud storage cp gs://subdron_dev/machine_learning/image_processing/weights/best.pth /srv/subdron/data/_state/models/PHASEFORMER/` (the runner prints this command if the weights are missing). |
-| Failures | The trigger never retries. Fix the cause (the dashboard and the trigger output link to the log), then redo the stage — see Reprocessing. |
-| Reprocessing | `python local_orchestrator/trigger/pipeline_trigger.py --reset <stage> <bag_path>` with stage `extraction`, `review`, `anomaly`, `phaseformer` or `colmap` — deletes that stage's records and outputs plus everything downstream (including the Label Studio task when the review is reset); the next trigger pass redoes it from there. `anomaly` resets only itself — it is not part of the cascade. |
+### A stage failed
 
-## Multi-user operation
+The red dashboard cell links to the log, or read `_state/logs/<job_id>.log` and the
+`error_tail` in the job record. Fix the cause, then `--reset` that stage. Failures
+are never retried automatically.
 
-The data root is shared and group-writable by design, so several users can work on
-the same machine from their own accounts. The trigger is a **system** service: it
-runs as one account regardless of who is logged in, and any user can check it
-(`systemctl status subdron-pipeline-trigger.timer`) or read its logs. Onboarding a
-new user is just `./scripts/setup_local_orchestrator.sh` from their own clone — the
-script joins the required groups (`subdron`, `docker`, `systemd-journal`) and reuses
-the machine's running DB. Code is per-user; only the data directory is shared, and
-the trigger already runs machine-wide, so there is nothing to start.
+### A stage shows "running" but nothing is happening
 
----
+The runner was killed (reboot, OOM). Check the `runner_pid` in the record with
+`ps -p <pid>` and `docker ps`; if both are gone, `--reset` that stage.
 
+### PHASEFORMER log shows "CUDA out of memory" / "Batch failed"
+
+The card is too small for the batch size. The stage skips the whole batch and keeps
+going, so the runner checks the outputs afterwards, resumes the missing images with a
+halved batch, and marks the job failed only if images are still missing. A running cell
+saying "errors in log" is that situation: let it finish. The default batch size follows
+the GPU memory (2 below 10 GB, 4 below 16 GB, else 8); force one with
+`--batch-size N` on `run_phaseformer.py`. Close GPU-heavy desktop apps (browser video,
+IDEs) while it runs; `nvidia-smi` shows who holds memory.
+
+### "Another GPU job is running"
+
+Only one PHASEFORMER or COLMAP job runs at a time (`_state/gpu.lock`). `docker ps`
+shows which one; wait, or stop the container to abort it (the job is then marked failed).
+
+### A bag is not picked up
+
+- The path must be `<root>/<robot>/<mission>/03_Logs/*.bag`; anything under a
+  `transformed/` directory is ignored.
+- `SKIP ... cannot derive identity` in the trigger output: the mission directory or the
+  timestamp in the filename does not match `<mission>_<YYYY-MM-DD-HH-MM-SS>.bag`.
+- `Another trigger pass is running`: passes are serial and an extraction is in
+  progress; the bag is handled by the next free pass.
+
+### Label Studio
+
+- **Annotated but nothing starts**: the Approve choice was not selected. Select it and
+  submit; the next pass converts it into the approval.
+- **Duplicate or orphan tasks**: the trigger only knows the task ids in
+  `_state/ls_tasks/`. Delete extra tasks in the UI, or `--reset review` the bag to get
+  one fresh task.
+- **Label Studio is down**: the trigger prints one warning per pass and skips the sync;
+  everything else keeps running. Approve from the command line meanwhile:
+  ```bash
+  python local_orchestrator/trigger/approve_bag_for_processing.py <bag.bag> --ranges 0:500 1400:2100
+  python local_orchestrator/trigger/approve_bag_for_processing.py <bag.bag> --reject
+  ```
+- **Video does not load in the task**: the data root must be mounted read-only inside
+  the Label Studio container under its local-files document root (see `release.md`).
+- **Disable the integration**: remove `_state/label_studio.json`.
+
+### Anomaly column says "api down"
+
+```bash
+docker compose -f local_orchestrator/docker-compose.yml up -d anomaly-api
+curl localhost:8095/health
+```
+
+The service needs the image `subdron-anomaly-api:<version>` present locally and the
+weights at `_state/models/anomaly/<model>/model.ckpt`. While it is down the trigger
+prints one warning per pass and skips the stage; once it is up, every extracted bag
+without an anomaly record is scored on the next pass. The runner's own output is in
+`_state/logs/<job_id>_anomaly.launch.log`, the API output in `_state/logs/<job_id>_anomaly.log`.
+
+### PHASEFORMER weights missing
+
+```bash
+gcloud storage cp gs://subdron_dev/machine_learning/image_processing/weights/best.pth /srv/subdron/data/_state/models/PHASEFORMER/
+```
+
+### Upgrade a stage image
+
+Edit the version in `local_orchestrator/images.env`, commit, then on each machine:
+
+```bash
+./scripts/update_local_images.sh
+```
+
+### Permission denied under the data root
+
+Everything is owned by group `subdron` and group-writable. Run
+`./scripts/setup_local_orchestrator.sh` again (it joins the groups) and log out and in.
+
+### Clean slate for a demo
+
+`--reset extraction` on every bag. Within a minute the trigger re-extracts them one by
+one and creates fresh review tasks; approve in Label Studio to continue.
