@@ -10,9 +10,9 @@ camera/<ts>/enhanced/PHASEFORMER, videos under camera/videos/<ts>/PHASEFORMER.
 Holds a GPU lock so only one GPU job runs at a time.
 
 The stage skips a whole batch when it runs out of GPU memory and still exits 0, so
-the batch size defaults from the GPU's memory and, after the run, every image in the
-range is checked: missing ones are retried with a halved batch (the stage resumes,
-processing only what is missing) and the job is marked failed if any remain.
+after the run every image in the range is checked: missing ones are retried with a
+halved batch size (the stage resumes, processing only what is missing) and the job is
+marked failed if any remain.
 """
 
 from __future__ import annotations
@@ -32,7 +32,6 @@ from pipeline_helpers import (
     check_mounts,
     docker_run_base,
     fail,
-    gpu_memory_mib,
     image_digest,
     mark_failed,
     resolve_data_root,
@@ -51,14 +50,7 @@ except ImportError:
 IMAGE_NAME = "subdron-image-processing"
 WEIGHTS_GS = "gs://subdron_dev/machine_learning/image_processing/weights/best.pth"
 IMAGE_GLOBS = ("*.jpg", "*.png")
-
-
-def default_batch_size(device: str) -> int:
-    """8 on the big cloud GPUs; smaller on desktop cards, where batch 8 at 720p OOMs."""
-    mib = gpu_memory_mib() if device == "gpu" else None
-    if mib is None:
-        return 8
-    return 2 if mib < 10_000 else 4 if mib < 16_000 else 8
+DEFAULT_BATCH_SIZE = 8  # same as the cloud; the post-run retry halves it when batches OOM
 
 
 def list_images(directory: Path) -> list[str]:
@@ -80,9 +72,9 @@ def main() -> None:
     parser.add_argument("input_dir", help="image_pose_pairs dir (absolute, or relative to DATA_ROOT)")
     parser.add_argument("--data-root", help="Data root (default: /srv/subdron/data; $DATA_ROOT overrides)")
     parser.add_argument("--tag", default="dev", help="Image tag (default: dev)")
-    parser.add_argument("--batch-size", type=int, default=None,
-                        help="Images per forward pass (default: from GPU memory — 2 below 10 GB, "
-                             "4 below 16 GB, else 8)")
+    parser.add_argument("--batch-size", type=int, default=DEFAULT_BATCH_SIZE,
+                        help=f"Images per forward pass (default {DEFAULT_BATCH_SIZE}; halved "
+                             "automatically for images skipped by out-of-memory batches)")
     parser.add_argument("--video-fps", type=int, default=30)
     parser.add_argument("--device", choices=["gpu", "cpu"], default="gpu")
     parser.add_argument("--image-range", help="Only process images in range start:end[:step]")
@@ -149,7 +141,7 @@ def main() -> None:
     check_mounts(mounts)
     digest = image_digest(image)
 
-    batch_size = args.batch_size or default_batch_size(args.device)
+    batch_size = args.batch_size
 
     def build_cmd(batch: int) -> list[str]:
         cmd = docker_run_base(

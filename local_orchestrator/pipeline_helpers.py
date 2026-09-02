@@ -149,16 +149,6 @@ def docker_run_base(name: str, mounts: list[tuple[Path, str]], env: dict | None 
     return cmd
 
 
-def gpu_memory_mib() -> int | None:
-    """Total memory of GPU 0 in MiB, or None without a usable nvidia-smi."""
-    result = subprocess.run(["nvidia-smi", "--query-gpu=memory.total", "--format=csv,noheader,nounits"],
-                            capture_output=True, text=True)
-    try:
-        return int(result.stdout.strip().splitlines()[0]) if result.returncode == 0 else None
-    except (IndexError, ValueError):
-        return None
-
-
 def mark_failed(record: dict, record_path: Path, message: str) -> None:
     """Finalize a record as failed after the container itself exited 0 (post-run validation)."""
     record.update(status="failed", ended_utc=utc_now(), exit_code=record.get("exit_code") or 2,

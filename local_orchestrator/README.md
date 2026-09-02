@@ -115,13 +115,13 @@ The runner was killed (reboot, OOM). Check the `runner_pid` in the record with
 
 ### PHASEFORMER log shows "CUDA out of memory" / "Batch failed"
 
-The card is too small for the batch size. The stage skips the whole batch and keeps
-going, so the runner checks the outputs afterwards, resumes the missing images with a
-halved batch, and marks the job failed only if images are still missing. A running cell
-saying "errors in log" is that situation: let it finish. The default batch size follows
-the GPU memory (2 below 10 GB, 4 below 16 GB, else 8); force one with
-`--batch-size N` on `run_phaseformer.py`. Close GPU-heavy desktop apps (browser video,
-IDEs) while it runs; `nvidia-smi` shows who holds memory.
+Batch size 8 at 720p is borderline on an 8 GB desktop card: anything else using the
+GPU (a browser playing the review video, an IDE) tips it over. The stage skips the
+whole batch and keeps going, so the runner checks the outputs afterwards, resumes the
+missing images with a halved batch size, and marks the job failed only if images are
+still missing. A running cell saying "errors in log" is that situation: let it finish.
+`--batch-size N` on `run_phaseformer.py` sets the starting size by hand.
+`nvidia-smi` shows who else holds GPU memory.
 
 ### "Another GPU job is running"
 

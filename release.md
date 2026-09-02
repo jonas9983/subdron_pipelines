@@ -62,10 +62,9 @@ bag in 03_Logs ──► EXTRACTION ──┬──► ANOMALY (background, inde
    (`--image-range start:end:step`), later ranges resume into the same output
    directory. Weights come from `_state/models/PHASEFORMER/best.pth`. The stage skips
    a batch that fails (typically CUDA out of memory on small GPUs) and still exits 0,
-   so the local runner picks the batch size from the GPU memory (2 / 4 / 8 for
-   < 10 GB / < 16 GB / larger), sets `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`,
+   so the local runner sets `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`,
    verifies every expected output after the run, resumes the missing images with a
-   halved batch, and marks the job failed if any are still missing.
+   halved batch size (8 → 4 → 2 → 1), and marks the job failed if any are still missing.
 5. **COLMAP** (`subdron-colmap`): spatial matching strategy over the enhanced images and
    the extracted poses; results in `results/colmap/runs/<ts>/PHASEFORMER_spatial/`.
 
@@ -232,9 +231,10 @@ from their own clone; code is per user, data and services are per machine.
 - The dashboard does not reload code by itself; a pull without a restart leaves it
   rendering stale logic.
 - A runner killed mid-job leaves its record in `running` until someone resets the stage.
-- An 8 GB desktop GPU (RTX 4060) enhances 720p images at roughly 2 images/s with batch
-  size 2 to 4; a 3200-image bag takes about half an hour. Desktop applications sharing
-  the card reduce the available memory.
+- An 8 GB desktop GPU (RTX 4060) enhances 720p images at roughly 2 images/s; a
+  3200-image bag takes about half an hour. Batch size 8 is borderline there, and
+  desktop applications sharing the card can push single batches into out-of-memory,
+  which the runner's retry then fills in.
 - Job records written before 1.3.0 (double-underscore ids) are ignored, not migrated.
 - Single machine, single GPU; there is no scheduling across machines.
 
