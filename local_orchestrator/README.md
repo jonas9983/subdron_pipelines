@@ -12,7 +12,7 @@ bag. Design notes, installation details and the release description live in
 /srv/subdron/data/<robot>/<mission>/03_Logs/<bag>.bag
         │   every minute: pipeline_trigger.py (systemd timer) makes one pass
         ▼
-   EXTRACTION ── images + poses + review video ──►  ANOMALY (background side branch)
+   EXTRACTION ── images + poses + review video ──►  ANOMALY (CPU side branch, seconds)
         │
         ▼
      REVIEW ───── one Label Studio task per bag: mark segments, submit Approve / Reject
@@ -32,7 +32,9 @@ bag. Design notes, installation details and the release description live in
   Timeline segments alone are a draft. Timeline frame N is image N-1 (the videos are
   rendered at 30 fps from the extracted images); the sync converts the ranges.
 - Anomaly detection needs only the extracted images, so it starts right after
-  extraction and never blocks the review or the GPU stages.
+  extraction and never blocks the review or the GPU stages. It runs on the CPU through
+  the always-on anomaly API container, one frame per second of footage, and takes
+  seconds per bag.
 
 ## Where things are
 
@@ -46,10 +48,10 @@ bag. Design notes, installation details and the release description live in
 | COLMAP results | `<mission>/02_Post_Mission/results/colmap/runs/<ts>/` |
 | Job records, logs | `<root>/_state/jobs/`, `<root>/_state/logs/<job_id>.log` |
 | Approvals, LS task ids | `<root>/_state/approvals/`, `<root>/_state/ls_tasks/` |
-| Model weights | `<root>/_state/models/PHASEFORMER/`, `<root>/_state/models/anomaly/<model>/` |
+| Model weights | `<root>/_state/models/PHASEFORMER/best.pth`, `<root>/_state/models/anomaly/<model>/model.xml` + `model.bin` |
 | Dashboard | `http://<machine>:8090` |
 | Label Studio | `http://<machine>:8080`, project "SUBDRON bag review" |
-| Anomaly API | `http://localhost:8095` (compose service `anomaly-api`) |
+| Anomaly API | `http://localhost:8095` (compose service `anomaly-api`, CPU inference, auto-restarts with Docker) |
 | Code | `runners/` one script per stage · `trigger/` trigger, dashboard, Label Studio sync, CLI approval |
 
 ## Setup (once per user)
@@ -157,15 +159,31 @@ shows which one; wait, or stop the container to abort it (the job is then marked
 ### Anomaly column says "api down"
 
 ```bash
+docker ps -a --filter name=subdron-anomaly-api                        # is the container there / restarting?
 docker compose -f local_orchestrator/docker-compose.yml up -d anomaly-api
 curl localhost:8095/health
 ```
 
-The service needs the image `subdron-anomaly-api:<version>` present locally and the
-weights at `_state/models/anomaly/<model>/model.ckpt`. While it is down the trigger
-prints one warning per pass and skips the stage; once it is up, every extracted bag
-without an anomaly record is scored on the next pass. The runner's own output is in
-`_state/logs/<job_id>_anomaly.launch.log`, the API output in `_state/logs/<job_id>_anomaly.log`.
+`pull access denied for subdron-anomaly-api` means the image alias is missing on this
+machine: `./scripts/update_local_images.sh` pulls it from the registry and starts the
+service (the setup script starts it too, once the image exists). While the API is down
+the trigger prints one warning per pass and skips the stage; once it is up, every
+extracted bag without an anomaly record is scored on the next pass.
+
+### Anomaly job failed with "no weights for model"
+
+One-time download into the data root (any machine with gcloud auth):
+
+```bash
+M=padim   # or patchcore, stfpm, efficientad
+gcloud storage cp gs://subdron_dev/machine_learning/anomaly_detection/weights/$M/model.xml \
+                  gs://subdron_dev/machine_learning/anomaly_detection/weights/$M/model.bin \
+                  /srv/subdron/data/_state/models/anomaly/$M/
+```
+
+The API picks them up on the next request; no restart needed. Logs:
+`_state/logs/<job_id>_anomaly.log` (the runner, one progress line per 25 frames,
+JSON summary last) and `docker logs subdron-anomaly-api` (the service).
 
 ### PHASEFORMER weights missing
 

@@ -5,29 +5,42 @@ Usage:
     python local_orchestrator/runners/run_anomaly.py <image_pose_pairs_dir> [options]
 
 Input is the image_pose_pairs directory produced by run_extraction.py. Frames are
-subsampled to --fps (default 1 per second of footage) and scored by the anomaly
-API container (see docker-compose.yml: service anomaly-api). Results land in the
-mission tree under camera/<ts>/anomaly/<model>/ (scores.csv + heatmaps of the
-anomalous frames). The API holds the model in memory, so no GPU lock is taken.
+subsampled to --fps (default 1 per second of footage, from the timestamp in the file
+names) and each one is posted to the anomaly API's /predict endpoint (service
+anomaly-api in docker-compose.yml; CPU inference through OpenVINO, so it never
+competes with the GPU stages and no GPU lock is taken). Results land in the mission
+tree under camera/<ts>/anomaly/<model>/:
+
+    scores.csv                one row per analysed frame (score, threshold, verdict)
+    <frame>_heatmap.png       overlay of the anomaly map, for the anomalous frames
+                              (--save-heatmaps all|anomalous|none)
 """
 
 from __future__ import annotations
 
 import argparse
+import base64
+import csv
 import json
+import os
+import re
 import sys
+import time
+import urllib.error
+import urllib.request
+import uuid
+from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from pipeline_helpers import (
     ANOMALY_API_URL,
-    CONTAINER_DATA,
     anomaly_api_health,
     check_existing_record,
     fail,
     resolve_data_root,
     resolve_under_data_root,
-    run_job,
+    utc_now,
 )
 
 try:
@@ -38,20 +51,81 @@ except ImportError:
         "        Run the one-time setup first:  ./scripts/setup_local_orchestrator.sh"
     )
 
-def check_api(api_url: str) -> dict:
-    health = anomaly_api_health(api_url, timeout=5)
-    if health is None:
-        fail(f"Anomaly API not reachable at {api_url}.\n"
-             f"        Start it with:  docker compose -f local_orchestrator/docker-compose.yml up -d anomaly-api")
-    return health
+MODELS = ("padim", "patchcore", "stfpm", "efficientad")
+WEIGHTS_GS = "gs://subdron_dev/machine_learning/anomaly_detection/weights"
+IMAGE_GLOBS = ("*.jpg", "*.png")
+TS_RE = re.compile(r"(\d{17})")  # extractor file names: YYYYMMDDHHMMSSmmm_<camera>.jpg
+ASSUMED_FPS = 30  # footage rate when file names carry no timestamp
+REQUEST_TIMEOUT_S = 120
+
+
+def check_api(api_url: str, patience_s: float = 60) -> dict:
+    """The API's /health, waiting up to patience_s: its single worker does not answer
+    while it scores a frame for another runner, so a busy API looks down for a moment."""
+    deadline = time.monotonic() + patience_s
+    while True:
+        health = anomaly_api_health(api_url, timeout=5)
+        if health is not None:
+            return health
+        if time.monotonic() >= deadline:
+            fail(f"Anomaly API not reachable at {api_url} for {patience_s:.0f}s.\n"
+                 f"        Start it with:  docker compose -f local_orchestrator/docker-compose.yml up -d anomaly-api")
+        time.sleep(2)
+
+
+def frame_time_s(name: str) -> float | None:
+    m = TS_RE.search(name)
+    if not m:
+        return None
+    ts = m.group(1)
+    return datetime.strptime(ts[:14], "%Y%m%d%H%M%S").timestamp() + int(ts[14:]) / 1000
+
+
+def subsample(images: list[Path], fps: float) -> list[Path]:
+    """One frame per 1/fps seconds of footage (0 = every frame)."""
+    if fps <= 0:
+        return images
+    times = [frame_time_s(p.name) for p in images]
+    if any(t is None for t in times):
+        return images[::max(1, round(ASSUMED_FPS / fps))]
+    picked, next_t = [], None
+    for p, t in zip(images, times):
+        if next_t is None or t >= next_t:
+            picked.append(p)
+            next_t = t + 1 / fps
+    return picked
+
+
+def predict(api_url: str, image: Path, model: str, heatmap: bool) -> dict:
+    """POST one image file to /predict (multipart) and return the JSON result."""
+    boundary = uuid.uuid4().hex
+    ctype = "image/png" if image.suffix.lower() == ".png" else "image/jpeg"
+    body = (f"--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; "
+            f"filename=\"{image.name}\"\r\nContent-Type: {ctype}\r\n\r\n").encode()
+    body += image.read_bytes() + f"\r\n--{boundary}--\r\n".encode()
+    req = urllib.request.Request(
+        f"{api_url}/predict?model={model}&include_heatmap={'true' if heatmap else 'false'}",
+        data=body, method="POST",
+        headers={"Content-Type": f"multipart/form-data; boundary={boundary}"})
+    try:
+        with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT_S) as resp:
+            return json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode(errors="replace")[:500]
+        if e.code == 404 and "weights" in detail.lower():
+            raise RuntimeError(
+                f"API has no weights for model '{model}' ({detail}). One-time download on any "
+                f"machine with gcloud auth, into DATA_ROOT/_state/models/anomaly/{model}/:\n"
+                f"        gcloud storage cp {WEIGHTS_GS}/{model}/model.xml {WEIGHTS_GS}/{model}/model.bin "
+                f"<DATA_ROOT>/_state/models/anomaly/{model}/") from None
+        raise RuntimeError(f"API error {e.code} for {image.name}: {detail}") from None
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("input_dir", help="image_pose_pairs dir (absolute, or relative to DATA_ROOT)")
     parser.add_argument("--data-root", help="Data root (default: /srv/subdron/data; $DATA_ROOT overrides)")
-    parser.add_argument("--model", default="padim",
-                        choices=["padim", "patchcore", "stfpm", "efficientad"])
+    parser.add_argument("--model", default="padim", choices=MODELS)
     parser.add_argument("--fps", type=float, default=1.0,
                         help="Frames per second of footage to analyse (0 = every frame)")
     parser.add_argument("--save-heatmaps", default="anomalous", choices=["anomalous", "all", "none"])
@@ -62,9 +136,9 @@ def main() -> None:
 
     data_root = resolve_data_root(args.data_root)
     input_dir = resolve_under_data_root(args.input_dir, data_root)
-    if not input_dir.is_dir() or not (any(input_dir.glob("*.jpg")) or any(input_dir.glob("*.png"))):
+    images = sorted(p for g in IMAGE_GLOBS for p in input_dir.glob(g))
+    if not input_dir.is_dir() or not images:
         fail(f"No images in input directory: {input_dir}")
-    input_rel = input_dir.relative_to(data_root).as_posix()
 
     try:
         source = subdron_utils.infer_source_from_path(str(input_dir))
@@ -79,18 +153,11 @@ def main() -> None:
     check_existing_record(record_path, args.force)
 
     health = check_api(args.api_url)
+    api_url = args.api_url.rstrip("/")
 
-    # The API container mounts DATA_ROOT at /data; it writes results next to the
-    # images, so the host output dir is camera/<ts>/anomaly/<model>
     output_dir = input_dir.parent / "anomaly" / args.model
-    payload = {
-        "image_dir": f"{CONTAINER_DATA}/{input_rel}",
-        "model": args.model,
-        "fps": args.fps,
-        "save_heatmaps": args.save_heatmaps,
-    }
-    cmd = ["curl", "-sS", "--fail", "-X", "POST", f"{args.api_url}/predict/dir",
-           "-H", "Content-Type: application/json", "-d", json.dumps(payload)]
+    scores_csv = output_dir / "scores.csv"
+    frames = subsample(images, args.fps)
 
     record = {
         "job_id": job_id,
@@ -99,29 +166,78 @@ def main() -> None:
         "source": source,
         "mission_id": mission_id,
         "timestamp": timestamp,
-        "api_url": args.api_url,
+        "api_url": api_url,
         "model": args.model,
         "fps": args.fps,
+        "frames_total": len(images),
+        "frames_analysed": len(frames),
         "outputs": {
             "anomaly_dir": str(output_dir),
-            "scores_csv": str(output_dir / "scores.csv"),
+            "scores_csv": str(scores_csv),
             "log": str(log_path),
         },
+        "runner_pid": os.getpid(), "status": "running", "started_utc": utc_now(),
+        "ended_utc": None, "duration_seconds": None, "exit_code": None, "error_tail": None,
     }
+    for d in (record_path.parent, log_path.parent, output_dir):
+        d.mkdir(parents=True, exist_ok=True)
+    record_path.write_text(json.dumps(record, indent=2))
+    for old in output_dir.glob("*_heatmap.png"):  # --force: no stale overlays
+        old.unlink()
 
-    n_images = len(list(input_dir.glob("*.jpg")) + list(input_dir.glob("*.png")))
-    print(f"[{job_id}] scoring {n_images} images at {args.fps} fps with {args.model} "
-          f"(api {args.api_url}, loaded: {health.get('loaded_models')})")
-    code = run_job(record, cmd, record_path, log_path)
-    if code == 0:
+    t0 = time.monotonic()
+
+    def finish(status: str, code: int, error: str | None = None) -> None:
+        record.update(status=status, ended_utc=utc_now(), exit_code=code, error_tail=error,
+                      duration_seconds=round(time.monotonic() - t0, 1))
+        record_path.write_text(json.dumps(record, indent=2))
+
+    want_heatmap = args.save_heatmaps != "none"
+    rows, anomalies = [], 0
+    with log_path.open("w") as log:
+        def out(msg: str) -> None:
+            log.write(msg + "\n"); log.flush()
+            print(msg, flush=True)
+
+        out(f"[{job_id}] {len(images)} images, analysing {len(frames)} at {args.fps} fps with "
+            f"{args.model} (api {api_url}, loaded: {health.get('loaded_models')})")
         try:
-            summary = json.loads(log_path.read_text().strip().splitlines()[-1])
-            print(f"[{job_id}] {summary['processed']} frames scored, "
-                  f"{summary['anomaly_count']} anomalous ({summary['anomaly_rate']:.0%}) "
-                  f"-> {output_dir}")
-        except (json.JSONDecodeError, KeyError, IndexError):
-            pass
-    sys.exit(code)
+            for i, frame in enumerate(frames, 1):
+                res = predict(api_url, frame, args.model, want_heatmap)
+                is_anomaly = bool(res.get("is_anomaly"))
+                anomalies += is_anomaly
+                rows.append({
+                    "image": frame.name,
+                    "footage_time_s": frame_time_s(frame.name),
+                    "anomaly_score": res.get("anomaly_score"),
+                    "threshold": res.get("threshold"),
+                    "is_anomaly": int(is_anomaly),
+                    "inference_ms": res.get("inference_time_ms"),
+                })
+                if res.get("heatmap_b64") and (args.save_heatmaps == "all" or is_anomaly):
+                    (output_dir / f"{frame.stem}_heatmap.png").write_bytes(base64.b64decode(res["heatmap_b64"]))
+                if i % 25 == 0 or i == len(frames):
+                    out(f"  {i}/{len(frames)} frames scored ({100 * i // len(frames)}%), {anomalies} anomalous")
+        except Exception as e:  # API down mid-run, bad response, disk error
+            msg = f"{type(e).__name__}: {e}"
+            out(f"[{job_id}] ERROR after {len(rows)} frames: {msg}")
+            finish("failed", 1, msg)
+            sys.exit(1)
+
+        with scores_csv.open("w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
+            writer.writeheader()
+            writer.writerows(rows)
+        summary = {
+            "processed": len(rows), "anomaly_count": anomalies,
+            "anomaly_rate": round(anomalies / len(rows), 4) if rows else 0.0,
+            "model": args.model, "fps": args.fps, "output_dir": str(output_dir),
+        }
+        out(json.dumps(summary))  # last log line: the dashboard reads this summary
+
+    finish("done", 0)
+    print(f"[{job_id}] done in {record['duration_seconds']}s — {anomalies}/{len(rows)} frames anomalous "
+          f"-> {output_dir} (record: {record_path})")
 
 
 if __name__ == "__main__":

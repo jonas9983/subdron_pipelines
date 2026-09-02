@@ -5,7 +5,7 @@ Level-triggered — state comes from the job records the runners
 write (DATA_ROOT/_state/jobs/). For every bag under <source>/<mission>/03_Logs/*.bag:
 
     no extraction record            -> runners/run_extraction.py
-    extracted, no anomaly record    -> runners/run_anomaly.py (background, needs the API up)
+    extracted, no anomaly record    -> runners/run_anomaly.py (seconds on the CPU; needs the API up)
     extracted + approved, no enh.   -> runners/run_phaseformer.py (per approved range)
     enhanced, no colmap record      -> runners/run_colmap.py
 
@@ -192,8 +192,7 @@ def main() -> None:
     bags = find_bags(data_root)
     print(f"Trigger pass: {len(bags)} bag(s) under {data_root}")
 
-    # Checked once per pass: a down API is reported here instead of by a runner
-    # that would fail silently in the background.
+    # Checked once per pass: a down API is reported here, once, instead of by every runner.
     anomaly_up = anomaly_api_health() is not None
     if not anomaly_up:
         print(f"[anomaly] API not reachable at {ANOMALY_API_URL} — anomaly detection skipped this pass"
@@ -222,24 +221,15 @@ def main() -> None:
 
         # Stage 1b: anomaly detection — needs only extracted images, so it runs
         # right away, independent of the review gate (results help the reviewer).
-        # Launched in the background: the API does the work, the rest of the
-        # pass (and the GPU stages) never wait for it.
+        # Synchronous like the other stages: the CPU-side API scores a bag in
+        # seconds, and a background child would be killed by systemd when this
+        # one-shot pass exits.
         an_status = record_status(jobs_dir, f"{job_id}_anomaly")
         if an_status is None:
             input_dir = mission_dir / "camera" / timestamp / "image_pose_pairs"
             if input_dir.is_dir() and anomaly_up:
-                cmd = [sys.executable, str(RUNNERS_DIR / "run_anomaly.py"), str(input_dir)]
-                if args.dry_run:
-                    print(f"  would run in background: {' '.join(cmd)}")
-                else:
-                    # The runner's own output (pre-flight errors, summary) goes to a
-                    # launch log; the API output lands in <job_id>_anomaly.log via run_job.
-                    launch_log = state_dir / "logs" / f"{job_id}_anomaly.launch.log"
-                    launch_log.parent.mkdir(parents=True, exist_ok=True)
-                    print(f"[{job_id}] extracted -> anomaly detection (background, output: {launch_log})")
-                    with launch_log.open("w") as out:
-                        subprocess.Popen(cmd, stdout=out, stderr=subprocess.STDOUT,
-                                         start_new_session=True)
+                print(f"[{job_id}] extracted -> anomaly detection")
+                run_stage("run_anomaly.py", str(input_dir), [], args.dry_run)
         elif an_status not in ("done", "running"):
             print(f"[{job_id}] anomaly {an_status}{failure_hint(jobs_dir, f'{job_id}_anomaly')}")
 

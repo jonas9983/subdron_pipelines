@@ -30,7 +30,7 @@ Out of scope: cloud upload, multi-machine scheduling, automatic retries.
 | Review sync | `local_orchestrator/trigger/label_studio_sync.py` | Creates one Label Studio task per extracted bag and converts submitted annotations into approval files. |
 | CLI approval | `local_orchestrator/trigger/approve_bag_for_processing.py` | Manual fallback that writes the same approval file. |
 | Dashboard | `local_orchestrator/trigger/pipeline_dashboard.py` | HTTP server on port 8090 rendering one row per bag and one cell per stage from the job records; serves job logs. |
-| Compose services | `local_orchestrator/docker-compose.yml` | `mission-db` (Postgres 16, mission tracking) and `anomaly-api` (always-on anomaly scoring service with GPU). |
+| Compose services | `local_orchestrator/docker-compose.yml` | `mission-db` (Postgres 16, mission tracking) and `anomaly-api` (always-on anomaly scoring service, CPU inference through OpenVINO). |
 | Image pins | `local_orchestrator/images.env`, `scripts/update_local_images.sh` | Versions of the stage images; the script pulls them and points the local `:dev` aliases at them. |
 | Setup | `scripts/setup_local_orchestrator.sh` | Per-user one-time setup; installs the systemd units the first time it runs on a machine. |
 | systemd units | `local_orchestrator/trigger/systemd/` | `subdron-pipeline-trigger.service` + `.timer` (one pass per minute), `subdron-pipeline-dashboard.service`. |
@@ -38,7 +38,7 @@ Out of scope: cloud upload, multi-machine scheduling, automatic retries.
 ### Processing flow
 
 ```
-bag in 03_Logs ──► EXTRACTION ──┬──► ANOMALY (background, independent of review)
+bag in 03_Logs ──► EXTRACTION ──┬──► ANOMALY (CPU, seconds, independent of review)
                                 │
                                 └──► REVIEW (Label Studio) ──► PHASEFORMER ──► COLMAP
 ```
@@ -46,11 +46,15 @@ bag in 03_Logs ──► EXTRACTION ──┬──► ANOMALY (background, inde
 1. **Extraction** (`subdron-rosbag-extractor`): transforms navigation into camera
    poses, extracts images, writes `image_pose_pairs/`, navigation CSVs and the review
    videos (`clean_30FPS.mp4`, overlaid variant). Updates the mission-tracking DB.
-2. **Anomaly detection** (`anomaly-api`): as soon as a bag is extracted, the trigger
-   launches the runner in the background. It subsamples the images to 1 frame per
-   second of footage (`--fps`) and posts the directory to the API, which writes
-   `scores.csv` and heatmaps of the anomalous frames to `camera/<ts>/anomaly/<model>/`.
-   The result is informative for the reviewer and never blocks anything.
+2. **Anomaly detection** (`anomaly-api`, image `subdron-anomaly-api` from the
+   `subdron-anomaly` registry repository): as soon as a bag is extracted, the trigger
+   runs the anomaly runner. It subsamples the images to 1 frame per
+   second of footage (`--fps`, using the timestamps in the file names), posts each
+   frame to the API's `/predict` endpoint and writes `scores.csv` plus heatmap overlays
+   of the anomalous frames to `camera/<ts>/anomaly/<model>/`. Default model `padim`
+   (also `patchcore`, `stfpm`, `efficientad`); about 45 ms per frame on the CPU, so a
+   bag is scored in seconds. The result is informative for the reviewer and never
+   blocks anything.
 3. **Review**: one Label Studio task per bag shows the clean review video. The reviewer
    marks the segments worth processing on the timeline ("Process" label) and submits
    the Approve or Reject choice. Timeline frames correspond to images one to one
@@ -76,7 +80,7 @@ a user's shell) sees the same truth and the machine can reboot at any time.
 | Path | Content |
 | :--- | :--- |
 | `jobs/<job_id>.json` | Job record: stage, inputs, image digest, outputs, `runner_pid`, `status` (`running` / `done` / `failed`), timestamps, duration, exit code, `error_tail`. |
-| `logs/<job_id>.log` | Full container or API output. Anomaly runs also have `<job_id>_anomaly.launch.log` with the runner's own output. |
+| `logs/<job_id>.log` | Full container output (or, for anomaly, the runner's per-frame progress and JSON summary). |
 | `approvals/<job_id>.json` | The review decision: `approved`, `ranges`, `decided_utc`, `source` (`label-studio` or CLI). |
 | `ls_tasks/<job_id>.json` | Label Studio task id created for the bag. |
 | `label_studio.json` | Label Studio connection (URL, token, project id, video prefix). Owner and group readable only. |
@@ -93,7 +97,7 @@ The trigger's decision table, evaluated per bag on every pass:
 | :--- | :--- |
 | no extraction record | run extraction |
 | extraction failed / running | report, do nothing |
-| extracted, no anomaly record, API reachable | launch anomaly in the background |
+| extracted, no anomaly record, API reachable | run anomaly detection (seconds) |
 | extracted, no approval, Label Studio configured | create the task if missing, else read its annotation |
 | extracted, approval says rejected | stop |
 | approved, no PHASEFORMER record | run PHASEFORMER per range |
@@ -131,11 +135,16 @@ from a tarball).
    ```bash
    gcloud storage cp gs://subdron_dev/machine_learning/image_processing/weights/best.pth /srv/subdron/data/_state/models/PHASEFORMER/
    ```
-4. Anomaly service (optional until the image is distributed): load the image
-   `subdron-anomaly-api:<ANOMALY_API_VERSION>`, place the weights at
-   `_state/models/anomaly/<model>/model.ckpt`, then
-   `docker compose -f local_orchestrator/docker-compose.yml up -d anomaly-api`.
-   The service restarts with Docker from then on.
+4. Anomaly weights (OpenVINO export, per model):
+   ```bash
+   for M in padim patchcore stfpm efficientad; do
+     gcloud storage cp gs://subdron_dev/machine_learning/anomaly_detection/weights/$M/model.xml \
+                       gs://subdron_dev/machine_learning/anomaly_detection/weights/$M/model.bin \
+                       /srv/subdron/data/_state/models/anomaly/$M/
+   done
+   ```
+   The anomaly API image is pulled by step 2 and the service started by it (and by the
+   setup script once the image exists); it restarts with Docker from then on.
 5. Connect Label Studio (next section).
 
 ### Label Studio setup (once per machine)
@@ -216,9 +225,9 @@ from their own clone; code is per user, data and services are per machine.
   resets it; this keeps a broken bag from consuming the GPU every minute.
 - **Explicit Approve.** Segments alone never start processing, so a reviewer can save
   a draft without triggering GPU work.
-- **Anomaly as a side branch.** It depends only on extraction, runs in the background
-  through an always-on API (model kept in memory, no per-bag container start), and its
-  failure or absence never blocks the main flow.
+- **Anomaly as a side branch.** It depends only on extraction, runs through an
+  always-on CPU API (model kept in memory, no per-bag container start, seconds per bag),
+  and its failure or absence never blocks the main flow.
 - **Pinned images, digests in records.** Every job record stores the image digest it
   ran with, so results are reproducible and upgrades are explicit (`images.env`).
 - **Label Studio is optional.** If it is down or unconfigured the pipeline continues,
@@ -226,8 +235,11 @@ from their own clone; code is per user, data and services are per machine.
 
 ## 8. Known limitations and open items
 
-- The anomaly API image is not yet handled by `update_local_images.sh` and has no
-  Dockerfile in this repository; it must be provided separately along with the weights.
+- The anomaly API source lives outside this repository (`subdron_anomaly_detection`);
+  the published `dev` image is the cloud variant, whose batch endpoint reads GCS URIs,
+  so the local runner uses the single-image `/predict` endpoint frame by frame.
+- Anomaly inference is CPU-only (OpenVINO); the `.pt` weights in the bucket were
+  exported on GPU and cannot be loaded without one.
 - The dashboard does not reload code by itself; a pull without a restart leaves it
   rendering stale logic.
 - A runner killed mid-job leaves its record in `running` until someone resets the stage.
