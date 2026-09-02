@@ -5,17 +5,13 @@ All notable changes to this project will be documented in this file.
 
 ## [1.3.0] - 2026-09-02
 
-- Anomaly detection stage: `runners/run_anomaly.py` scores extracted images at 1 fps through the always-on anomaly API (`anomaly-api` service in `local_orchestrator/docker-compose.yml`); results in `camera/<ts>/anomaly/<model>/`, weights hosted at `_state/models/anomaly/`.
-- The trigger runs anomaly detection right after extraction, independent of the review gate (synchronously: seconds per bag on the CPU, and systemd kills background children of the one-shot pass); it checks the API once per pass and skips the stage with a single warning when it is down; `--reset anomaly` redoes only that stage.
-- Dashboard: ANOMALY column ("api down" / queued / running / done with the anomalous-frame count), a side branch that never affects the bag's summary state.
-- Job ids use single underscores between fields (existing `__` records need renaming or a reset).
-- `ANOMALY_API_URL` (env override) shared by trigger, runner and dashboard.
-- Anomaly runner talks to the published API image (`/predict` per frame, multipart upload) and writes `scores.csv` + heatmaps itself; the API runs on the CPU (OpenVINO weights `model.xml` + `model.bin` per model), so the compose service no longer requests the GPU runtime.
-- `update_local_images.sh` pulls `subdron-anomaly-api` (registry repository `subdron-anomaly`) and (re)starts the service; `setup_local_orchestrator.sh` starts it when the image is present and only brings up `mission-db` otherwise, so a missing anomaly image no longer aborts setup.
-- PHASEFORMER runner: `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` and post-run output verification — images skipped by failed batches (CUDA OOM) are resumed with a halved batch, and the job is marked failed if any remain missing instead of silently "done".
-- Label Studio ranges: 1-based inclusive timeline frames are converted to the stage's 0-based slices (the first image of every range was skipped before).
-- Dashboard running cells show the latest progress line (not a traceback line) and flag "errors in log".
-- Docs: `local_orchestrator/README.md` reduced to overview + troubleshooting; full description in `release.md` (source for the Confluence release page).
+- Anomaly stage: `run_anomaly.py` scores extracted frames (1 fps) through the always-on `anomaly-api` compose service (CPU/OpenVINO); results in `02_Post_Mission/results/anomaly/<ts>/<model>/` (`scores.csv` + original-vs-heatmap images). The trigger runs it right after extraction and skips it with one warning when the API is down; `--reset anomaly` redoes only that stage.
+- Anomaly image pulled by `update_local_images.sh`; the service is started by it and by the setup script.
+- PHASEFORMER runner verifies every expected output; images skipped by OOM batches are resumed with a halved batch size, and the job fails if any remain missing.
+- Label Studio ranges converted from 1-based frames to 0-based image indices (the first image of each range was skipped).
+- Dashboard: ANOMALY column; running cells show the progress line and flag errors in the log.
+- Job ids use single underscores (`__` records from earlier versions need a reset).
+- README reduced to overview + troubleshooting; full description in `release.md`.
 
 
 ## [1.2.0] - 2026-08-05

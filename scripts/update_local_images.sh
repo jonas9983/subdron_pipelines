@@ -13,8 +13,7 @@ declare -A VERSIONS=(
     ["subdron-colmap"]="$COLMAP_VERSION"
     ["subdron-anomaly-api"]="$ANOMALY_API_VERSION"
 )
-# Registry repository per image (defaults to the image name; the anomaly API lives
-# under a differently named repository).
+# registry repository when it differs from the image name
 declare -A REPOS=(
     ["subdron-anomaly-api"]="subdron-anomaly"
 )
@@ -34,8 +33,6 @@ done
 
 echo "Done. Runners will use these on their next launch."
 
-# The anomaly API is a long-running service, not a per-job container: (re)create it
-# so the new image is what answers on port 8095.
 if [ -z "$DRY_RUN" ]; then
     docker compose -f "$REPO_ROOT/local_orchestrator/docker-compose.yml" up -d anomaly-api
 fi

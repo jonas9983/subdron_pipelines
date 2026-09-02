@@ -7,12 +7,8 @@ Usage:
 Input is the image_pose_pairs directory produced by run_extraction.py (absolute,
 or relative to DATA_ROOT). Enhanced images land in the mission tree under
 camera/<ts>/enhanced/PHASEFORMER, videos under camera/videos/<ts>/PHASEFORMER.
-Holds a GPU lock so only one GPU job runs at a time.
-
-The stage skips a whole batch when it runs out of GPU memory and still exits 0, so
-after the run every image in the range is checked: missing ones are retried with a
-halved batch size (the stage resumes, processing only what is missing) and the job is
-marked failed if any remain.
+Holds a GPU lock so only one GPU job runs at a time. Images skipped by the stage
+(OOM batches) are retried with a halved batch size; the job fails if any remain.
 """
 
 from __future__ import annotations
@@ -50,7 +46,7 @@ except ImportError:
 IMAGE_NAME = "subdron-image-processing"
 WEIGHTS_GS = "gs://subdron_dev/machine_learning/image_processing/weights/best.pth"
 IMAGE_GLOBS = ("*.jpg", "*.png")
-DEFAULT_BATCH_SIZE = 8  # same as the cloud; the post-run retry halves it when batches OOM
+DEFAULT_BATCH_SIZE = 8
 
 
 def list_images(directory: Path) -> list[str]:
@@ -58,7 +54,7 @@ def list_images(directory: Path) -> list[str]:
 
 
 def expected_outputs(input_dir: Path, image_range: str | None) -> list[str]:
-    """Image names the stage should produce: same slicing as the stage (start:end[:step])."""
+    """Same start:end[:step] slicing as the stage."""
     names = list_images(input_dir)
     if not image_range:
         return names
@@ -147,8 +143,6 @@ def main() -> None:
         cmd = docker_run_base(
             name=f"phaseformer-{mission_id}-{timestamp}",
             mounts=mounts,
-            # expandable segments avoid the allocator fragmentation that turns a
-            # near-full card into "CUDA out of memory" mid-run
             env={"PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"},
             gpu=args.device == "gpu",
             workdir=workdir,

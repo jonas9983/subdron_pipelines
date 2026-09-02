@@ -9,7 +9,7 @@ REPO_ROOT=$(cd "$(dirname "$0")/.." && pwd)
 ORCH="$REPO_ROOT/local_orchestrator"
 ENV_NAME="pipelines"
 DATA_ROOT="${DATA_ROOT:-/srv/subdron/data}"
-source "$ORCH/images.env"   # pinned image versions (ANOMALY_API_VERSION for the service below)
+source "$ORCH/images.env"
 
 # Shared data root: the machine's first run creates the group + group-writable
 # tree (needs sudo once); later runs just join the current user to the groups.
@@ -88,9 +88,7 @@ docker exec subdron-mission-db psql -U subdron -d mission_data -tAc \
     "DELETE FROM missions_test WHERE mission_id = '_db_check';" > /dev/null
 echo "    DB write OK"
 
-# Anomaly API: an always-on service (restart: unless-stopped), started here once its
-# image is present. Without the image, setup still succeeds — the trigger reports
-# "anomaly API not reachable" and skips that stage until update_local_images.sh runs.
+# Anomaly API, if its image is present (update_local_images.sh pulls it)
 if docker image inspect "subdron-anomaly-api:${ANOMALY_API_VERSION:-dev}" > /dev/null 2>&1; then
     echo "--- Starting anomaly API (port ${ANOMALY_API_PORT:-8095}) ---"
     docker compose -f "$ORCH/docker-compose.yml" up -d anomaly-api

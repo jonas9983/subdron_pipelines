@@ -43,7 +43,7 @@ bag. Design notes, installation details and the release description live in
 | Data root | `/srv/subdron/data` (`DATA_ROOT` overrides) |
 | Bags in | `<root>/<robot>/<mission>/03_Logs/<mission>_<YYYY-MM-DD-HH-MM-SS>.bag` |
 | Extraction out | `<mission>/02_Post_Mission/camera/<ts>/image_pose_pairs`, `navigation/<ts>/`, `camera/videos/<ts>/original/` |
-| Anomaly out | `<mission>/02_Post_Mission/camera/<ts>/anomaly/<model>/` (`scores.csv` + heatmaps) |
+| Anomaly out | `<mission>/02_Post_Mission/results/anomaly/<ts>/<model>/` (`scores.csv` + original-vs-heatmap images) |
 | Enhanced images | `<mission>/02_Post_Mission/camera/<ts>/enhanced/PHASEFORMER/` |
 | COLMAP results | `<mission>/02_Post_Mission/results/colmap/runs/<ts>/` |
 | Job records, logs | `<root>/_state/jobs/`, `<root>/_state/logs/<job_id>.log` |
@@ -181,7 +181,7 @@ gcloud storage cp gs://subdron_dev/machine_learning/anomaly_detection/weights/$M
                   /srv/subdron/data/_state/models/anomaly/$M/
 ```
 
-The API picks them up on the next request; no restart needed. Logs:
+After replacing weights of a model that was already used, `docker restart subdron-anomaly-api` (it caches loaded models). Logs:
 `_state/logs/<job_id>_anomaly.log` (the runner, one progress line per 25 frames,
 JSON summary last) and `docker logs subdron-anomaly-api` (the service).
 

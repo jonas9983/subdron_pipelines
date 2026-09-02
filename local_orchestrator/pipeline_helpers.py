@@ -150,7 +150,6 @@ def docker_run_base(name: str, mounts: list[tuple[Path, str]], env: dict | None 
 
 
 def mark_failed(record: dict, record_path: Path, message: str) -> None:
-    """Finalize a record as failed after the container itself exited 0 (post-run validation)."""
     record.update(status="failed", ended_utc=utc_now(), exit_code=record.get("exit_code") or 2,
                   error_tail=message)
     record_path.write_text(json.dumps(record, indent=2))
@@ -160,8 +159,7 @@ def mark_failed(record: dict, record_path: Path, message: str) -> None:
 def run_job(record: dict, cmd: list[str], record_path: Path, log_path: Path,
             append_log: bool = False) -> int:
     """Write the running record, stream the container to log+stdout, finalize, return exit code.
-    append_log=True continues an existing job (retry within the same record): the log is
-    appended to and the original start time is kept."""
+    append_log=True continues the same job (log appended, start time kept)."""
     for d in (record_path.parent, log_path.parent):
         d.mkdir(parents=True, exist_ok=True)
     started = record.get("started_utc") if append_log else None

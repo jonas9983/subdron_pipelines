@@ -1,19 +1,11 @@
 #!/usr/bin/env python3
-"""Run anomaly detection for one extracted bag through the local anomaly API.
+"""Run anomaly detection for one extracted bag through the local anomaly API (CPU).
 
 Usage:
     python local_orchestrator/runners/run_anomaly.py <image_pose_pairs_dir> [options]
 
-Input is the image_pose_pairs directory produced by run_extraction.py. Frames are
-subsampled to --fps (default 1 per second of footage, from the timestamp in the file
-names) and each one is posted to the anomaly API's /predict endpoint (service
-anomaly-api in docker-compose.yml; CPU inference through OpenVINO, so it never
-competes with the GPU stages and no GPU lock is taken). Results land in the mission
-tree under camera/<ts>/anomaly/<model>/:
-
-    scores.csv                one row per analysed frame (score, threshold, verdict)
-    <frame>_heatmap.png       overlay of the anomaly map, for the anomalous frames
-                              (--save-heatmaps all|anomalous|none)
+Frames are subsampled to --fps and posted to /predict; scores.csv and
+original-vs-heatmap images land in 02_Post_Mission/results/anomaly/<ts>/<model>/.
 """
 
 from __future__ import annotations
@@ -21,6 +13,7 @@ from __future__ import annotations
 import argparse
 import base64
 import csv
+import io
 import json
 import os
 import re
@@ -31,6 +24,8 @@ import urllib.request
 import uuid
 from datetime import datetime
 from pathlib import Path
+
+from PIL import Image, ImageDraw, ImageFont
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from pipeline_helpers import (
@@ -54,14 +49,13 @@ except ImportError:
 MODELS = ("padim", "patchcore", "stfpm", "efficientad")
 WEIGHTS_GS = "gs://subdron_dev/machine_learning/anomaly_detection/weights"
 IMAGE_GLOBS = ("*.jpg", "*.png")
-TS_RE = re.compile(r"(\d{17})")  # extractor file names: YYYYMMDDHHMMSSmmm_<camera>.jpg
-ASSUMED_FPS = 30  # footage rate when file names carry no timestamp
+TS_RE = re.compile(r"(\d{17})")  # YYYYMMDDHHMMSSmmm in the extractor's file names
+ASSUMED_FPS = 30
 REQUEST_TIMEOUT_S = 120
 
 
 def check_api(api_url: str, patience_s: float = 60) -> dict:
-    """The API's /health, waiting up to patience_s: its single worker does not answer
-    while it scores a frame for another runner, so a busy API looks down for a moment."""
+    """/health, waiting up to patience_s (the single worker is silent while it scores)."""
     deadline = time.monotonic() + patience_s
     while True:
         health = anomaly_api_health(api_url, timeout=5)
@@ -121,6 +115,33 @@ def predict(api_url: str, image: Path, model: str, heatmap: bool) -> dict:
         raise RuntimeError(f"API error {e.code} for {image.name}: {detail}") from None
 
 
+CAPTION_H = 30
+
+
+def _caption_font():
+    try:
+        return ImageFont.load_default(size=18)  # Pillow >= 10.1
+    except TypeError:
+        return ImageFont.load_default()
+
+
+def save_comparison(frame: Path, heatmap_b64: str, result: dict, dest: Path) -> None:
+    original = Image.open(frame).convert("RGB")
+    overlay = Image.open(io.BytesIO(base64.b64decode(heatmap_b64))).convert("RGB")
+    if overlay.size != original.size:
+        overlay = overlay.resize(original.size)
+    w, h = original.size
+    canvas = Image.new("RGB", (2 * w, h + CAPTION_H), "black")
+    canvas.paste(original, (0, CAPTION_H))
+    canvas.paste(overlay, (w, CAPTION_H))
+    draw, font = ImageDraw.Draw(canvas), _caption_font()
+    verdict = "ANOMALY" if result.get("is_anomaly") else "normal"
+    draw.text((8, 6), f"{frame.name}   original", fill="white", font=font)
+    draw.text((w + 8, 6), f"{result.get('model')} heatmap   score {result.get('anomaly_score')} "
+                          f"/ threshold {result.get('threshold')}   {verdict}", fill="white", font=font)
+    canvas.save(dest, quality=90)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("input_dir", help="image_pose_pairs dir (absolute, or relative to DATA_ROOT)")
@@ -155,7 +176,8 @@ def main() -> None:
     health = check_api(args.api_url)
     api_url = args.api_url.rstrip("/")
 
-    output_dir = input_dir.parent / "anomaly" / args.model
+    post_mission = input_dir.parents[2]
+    output_dir = post_mission / "results" / "anomaly" / timestamp / args.model
     scores_csv = output_dir / "scores.csv"
     frames = subsample(images, args.fps)
 
@@ -182,7 +204,7 @@ def main() -> None:
     for d in (record_path.parent, log_path.parent, output_dir):
         d.mkdir(parents=True, exist_ok=True)
     record_path.write_text(json.dumps(record, indent=2))
-    for old in output_dir.glob("*_heatmap.png"):  # --force: no stale overlays
+    for old in output_dir.glob("*_anomaly.*"):
         old.unlink()
 
     t0 = time.monotonic()
@@ -215,10 +237,10 @@ def main() -> None:
                     "inference_ms": res.get("inference_time_ms"),
                 })
                 if res.get("heatmap_b64") and (args.save_heatmaps == "all" or is_anomaly):
-                    (output_dir / f"{frame.stem}_heatmap.png").write_bytes(base64.b64decode(res["heatmap_b64"]))
+                    save_comparison(frame, res["heatmap_b64"], res, output_dir / f"{frame.stem}_anomaly.jpg")
                 if i % 25 == 0 or i == len(frames):
                     out(f"  {i}/{len(frames)} frames scored ({100 * i // len(frames)}%), {anomalies} anomalous")
-        except Exception as e:  # API down mid-run, bad response, disk error
+        except Exception as e:
             msg = f"{type(e).__name__}: {e}"
             out(f"[{job_id}] ERROR after {len(rows)} frames: {msg}")
             finish("failed", 1, msg)
@@ -233,7 +255,7 @@ def main() -> None:
             "anomaly_rate": round(anomalies / len(rows), 4) if rows else 0.0,
             "model": args.model, "fps": args.fps, "output_dir": str(output_dir),
         }
-        out(json.dumps(summary))  # last log line: the dashboard reads this summary
+        out(json.dumps(summary))  # the dashboard reads this last line
 
     finish("done", 0)
     print(f"[{job_id}] done in {record['duration_seconds']}s — {anomalies}/{len(rows)} frames anomalous "

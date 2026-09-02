@@ -120,7 +120,8 @@ def reset(stage: str, path_arg: str, data_root: Path) -> None:
     if stage in ("extraction", "anomaly"):
         # anomaly depends only on extraction, so it is not part of the
         # review -> phaseformer -> colmap cascade
-        targets += [state_dir / "jobs" / f"{job_id}_anomaly.json", camera / "anomaly"]
+        targets += [state_dir / "jobs" / f"{job_id}_anomaly.json",
+                    mission / "results" / "anomaly" / timestamp]
     if stage in ("extraction", "review"):
         targets += [state_dir / "approvals" / f"{job_id}.json"]
         label_studio_sync.delete_task(label_studio_sync.load_config(state_dir), state_dir, job_id)
@@ -192,7 +193,6 @@ def main() -> None:
     bags = find_bags(data_root)
     print(f"Trigger pass: {len(bags)} bag(s) under {data_root}")
 
-    # Checked once per pass: a down API is reported here, once, instead of by every runner.
     anomaly_up = anomaly_api_health() is not None
     if not anomaly_up:
         print(f"[anomaly] API not reachable at {ANOMALY_API_URL} — anomaly detection skipped this pass"
@@ -219,11 +219,8 @@ def main() -> None:
             print(f"[{job_id}] extraction {status}{hint}")
             continue
 
-        # Stage 1b: anomaly detection — needs only extracted images, so it runs
-        # right away, independent of the review gate (results help the reviewer).
-        # Synchronous like the other stages: the CPU-side API scores a bag in
-        # seconds, and a background child would be killed by systemd when this
-        # one-shot pass exits.
+        # Stage 1b: anomaly detection, independent of the review gate (seconds, CPU).
+        # Synchronous: systemd kills background children when the one-shot pass exits.
         an_status = record_status(jobs_dir, f"{job_id}_anomaly")
         if an_status is None:
             input_dir = mission_dir / "camera" / timestamp / "image_pose_pairs"

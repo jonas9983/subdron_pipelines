@@ -13,9 +13,7 @@ services:
       - mission_db_data:/var/lib/postgresql/data
       - ./init_db.sql:/docker-entrypoint-initdb.d/init_db.sql:ro
 
-  # Always-on anomaly scoring service (image pulled by scripts/update_local_images.sh).
-  # Runs on the CPU (OpenVINO), so it never competes with the GPU stages; the runner
-  # posts frames to its /predict endpoint and writes the results into the mission tree.
+  # Always-on anomaly scoring API (CPU). Image: scripts/update_local_images.sh
   anomaly-api:
     image: subdron-anomaly-api:${ANOMALY_API_VERSION:-dev}
     container_name: subdron-anomaly-api
@@ -26,8 +24,7 @@ services:
       LOCAL_CACHE_BASE: /models
       TRUST_REMOTE_CODE: "1"
     volumes:
-      # Weights live on the host: _state/models/anomaly/<model>/model.xml + model.bin
-      - ${DATA_ROOT:-/srv/subdron/data}/_state/models/anomaly:/models
+      - ${DATA_ROOT:-/srv/subdron/data}/_state/models/anomaly:/models   # <model>/model.xml + model.bin
 
 volumes:
   mission_db_data:

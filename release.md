@@ -50,8 +50,9 @@ bag in 03_Logs ──► EXTRACTION ──┬──► ANOMALY (CPU, seconds, in
    `subdron-anomaly` registry repository): as soon as a bag is extracted, the trigger
    runs the anomaly runner. It subsamples the images to 1 frame per
    second of footage (`--fps`, using the timestamps in the file names), posts each
-   frame to the API's `/predict` endpoint and writes `scores.csv` plus heatmap overlays
-   of the anomalous frames to `camera/<ts>/anomaly/<model>/`. Default model `padim`
+   frame to the API's `/predict` endpoint and writes `scores.csv` plus, for each
+   anomalous frame, an image with the original next to the heatmap overlay and the score,
+   to `02_Post_Mission/results/anomaly/<ts>/<model>/`. Default model `padim`
    (also `patchcore`, `stfpm`, `efficientad`); about 45 ms per frame on the CPU, so a
    bag is scored in seconds. The result is informative for the reviewer and never
    blocks anything.
