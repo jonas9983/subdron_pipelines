@@ -58,6 +58,8 @@ def main() -> None:
     parser.add_argument("--spatial-radius", type=float, default=5.0)
     parser.add_argument("--feature-extractor", choices=["sift", "aliked"], default="sift")
     parser.add_argument("--plane-mode", choices=["single", "windowed"], default="single")
+    parser.add_argument("--run-ba", action="store_true",
+                        help="Refine the navigation poses with COLMAP bundle adjustment (results in <dir-version>-ba)")
     parser.add_argument("--force", action="store_true", help="Re-run a completed job")
     parser.add_argument("--no-db", action="store_true", help="Do not pass DB env into the container")
     parser.add_argument("--dev-code", action="store_true",
@@ -85,8 +87,9 @@ def main() -> None:
             fail(f"Poses CSV not found (run extraction first?): {poses}")
     poses_rel = poses.relative_to(data_root).as_posix()
 
-    dir_version = f"{ip_method or 'RAW'}_{args.matching_strategy}"
-    job_id = f"{source}_{mission_id}_{timestamp}_colmap-{args.matching_strategy}"
+    suffix = "-ba" if args.run_ba else ""
+    dir_version = f"{ip_method or 'RAW'}_{args.matching_strategy}{suffix}"
+    job_id = f"{source}_{mission_id}_{timestamp}_colmap-{args.matching_strategy}{suffix}"
 
     state_dir = data_root / "_state"
     record_path = state_dir / "jobs" / f"{job_id}.json"
@@ -123,7 +126,7 @@ def main() -> None:
     digest = image_digest(image)
 
     cmd = docker_run_base(
-        name=f"colmap-{mission_id}-{timestamp}-{args.matching_strategy}",
+        name=f"colmap-{mission_id}-{timestamp}-{args.matching_strategy}{suffix}",
         mounts=mounts,
         env={"ENV": "dev"} if args.no_db else {**DB_ENV, "ENV": "dev"},
         gpu=True,
@@ -141,6 +144,8 @@ def main() -> None:
         "--plane-mode", args.plane_mode,
         "--feature-extractor", args.feature_extractor,
     ]
+    if args.run_ba:
+        cmd.append("--run-ba")
 
     gpu_lock = acquire_gpu_lock(state_dir)  # noqa: F841 — held until exit
 
@@ -153,6 +158,7 @@ def main() -> None:
         "mission_id": mission_id,
         "timestamp": timestamp,
         "matching_strategy": args.matching_strategy,
+        "run_ba": args.run_ba,
         "dir_version": dir_version,
         "image": image,
         "image_digest": digest,
