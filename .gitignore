@@ -62,3 +62,6 @@ data/
 .venv/
 .python-version
 __pycache__/
+
+# sibling repo checked out inside the workspace
+subdron_photomosaicking/
