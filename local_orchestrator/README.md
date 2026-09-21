@@ -201,8 +201,11 @@ Edit the version in `local_orchestrator/images.env`, commit, then on each machin
 
 ### Permission denied under the data root
 
-Everything is owned by group `subdron` and group-writable. Run
-`./scripts/setup_local_orchestrator.sh` again (it joins the groups) and log out and in.
+Everything is owned by group `subdron` and group-writable; the containers run as the
+calling user plus that group, so folders created by another user are fine. If a stage
+still fails with `PermissionError` inside `/data/...`, the folder was copied in without
+group write (`chmod -R g+w <mission dir>` as its owner) or the user is not in the group
+yet: run `./scripts/setup_local_orchestrator.sh` again and log out and in.
 
 ### Clean slate for a demo
 

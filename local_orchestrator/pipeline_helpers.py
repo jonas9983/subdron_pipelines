@@ -136,6 +136,11 @@ def docker_run_base(name: str, mounts: list[tuple[Path, str]], env: dict | None 
            "--user", f"{os.getuid()}:{os.getgid()}",
            "--add-host", "host.docker.internal:host-gateway",  # reach the host's mission DB
            "-e", "HOME=/tmp"]  # --user has no home; stops matplotlib/CUDA cache noise
+    # --user drops supplementary groups; re-add them so the shared data root's group
+    # (subdron) applies to folders created by other users.
+    for gid in os.getgroups():
+        if gid != os.getgid():
+            cmd += ["--group-add", str(gid)]
     if entrypoint:
         cmd += ["--entrypoint", entrypoint]
     if workdir:

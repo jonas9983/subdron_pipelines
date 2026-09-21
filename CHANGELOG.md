@@ -10,6 +10,7 @@ All notable changes to this project will be documented in this file.
 - PHASEFORMER runner verifies every expected output; images skipped by OOM batches are resumed with a halved batch size, and the job fails if any remain missing.
 - Label Studio ranges converted from 1-based frames to 0-based image indices (the first image of each range was skipped).
 - Dashboard: ANOMALY column; running cells show the progress line and flag errors in the log.
+- Containers keep the caller's supplementary groups (`--group-add`), so users can process each other's mission folders.
 - Job ids use single underscores (`__` records from earlier versions need a reset).
 - README reduced to overview + troubleshooting; full description in `release.md`.
 
