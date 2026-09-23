@@ -54,22 +54,27 @@ bag. Design notes, installation details and the release description live in
 | Anomaly API | `http://localhost:8095` (compose service `anomaly-api`, CPU inference, auto-restarts with Docker) |
 | Code | `runners/` one script per stage · `trigger/` trigger, dashboard, Label Studio sync, CLI approval |
 
-## Setup (once per user)
+## Setup (once per machine)
+
+There is one setup script for the whole host and it lives in the `subdron_missions_database`
+repository, checked out next to this one:
 
 ```bash
-./scripts/setup_local_orchestrator.sh
+../subdron_missions_database/setup_host.sh
 ```
 
-Creates the data root, joins the groups, builds the Python env, starts the tracking DB
-and, for the first user on a machine, installs the trigger timer and the dashboard as
-systemd units. Label Studio is connected once per machine: see "Label Studio setup"
-in `release.md`.
+Run as the operator account that owns the machine. It brings up Postgres, MLflow and
+Label Studio, creates `/srv/subdron/data`, builds this repo's `.venv`, stores the DB
+connection in `_state/mission_db.env` and installs the trigger timer and the dashboard as
+system services running as that account. Then pull the stage images
+(`./scripts/update_local_images.sh`) and connect Label Studio (its printed next steps).
+Other people only drop bags into the data root; a local account needs group `subdron`
+to write there (`sudo usermod -aG subdron <user>`).
 
 ## Troubleshooting
 
-Run the Python commands below from the repo root with the `pipelines` environment
-active. `MISSION_DB_PORT` is only needed when the tracking DB is not on port 5433;
-the setup script writes the export to `~/.bashrc`.
+Run the Python commands below from the repo root with `.venv/bin/python`. Stage logging goes to the `subdron_missions_database` Postgres on this host;
+the connection is in `_state/mission_db.env` (written by the setup script).
 
 ### What is the pipeline doing right now?
 
@@ -205,7 +210,7 @@ Everything is owned by group `subdron` and group-writable; the containers run as
 calling user plus that group, so folders created by another user are fine. If a stage
 still fails with `PermissionError` inside `/data/...`, the folder was copied in without
 group write (`chmod -R g+w <mission dir>` as its owner) or the user is not in the group
-yet: run `./scripts/setup_local_orchestrator.sh` again and log out and in.
+yet: `sudo usermod -aG subdron <user>`, then log out and in.
 
 ### Clean slate for a demo
 

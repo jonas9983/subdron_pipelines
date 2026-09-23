@@ -30,9 +30,9 @@ Out of scope: cloud upload, multi-machine scheduling, automatic retries.
 | Review sync | `local_orchestrator/trigger/label_studio_sync.py` | Creates one Label Studio task per extracted bag and converts submitted annotations into approval files. |
 | CLI approval | `local_orchestrator/trigger/approve_bag_for_processing.py` | Manual fallback that writes the same approval file. |
 | Dashboard | `local_orchestrator/trigger/pipeline_dashboard.py` | HTTP server on port 8090 rendering one row per bag and one cell per stage from the job records; serves job logs. |
-| Compose services | `local_orchestrator/docker-compose.yml` | `mission-db` (Postgres 16, mission tracking) and `anomaly-api` (always-on anomaly scoring service, CPU inference through OpenVINO). |
+| Compose services | `local_orchestrator/docker-compose.yml` | `anomaly-api` (always-on anomaly scoring service, CPU inference through OpenVINO). The mission tracking DB is the `subdron_missions_database` stack on the same host. |
 | Image pins | `local_orchestrator/images.env`, `scripts/update_local_images.sh` | Versions of the stage images; the script pulls them and points the local `:dev` aliases at them. |
-| Setup | `scripts/setup_local_orchestrator.sh` | Per-user one-time setup; installs the systemd units the first time it runs on a machine. |
+| Setup | `subdron_missions_database/setup_host.sh` (sibling repository) | The single host setup: mission stack, data root, this repo's `.venv`, DB connection, systemd units. |
 | systemd units | `local_orchestrator/trigger/systemd/` | `subdron-pipeline-trigger.service` + `.timer` (one pass per minute), `subdron-pipeline-dashboard.service`. |
 
 ### Processing flow
@@ -85,6 +85,7 @@ a user's shell) sees the same truth and the machine can reboot at any time.
 | `approvals/<job_id>.json` | The review decision: `approved`, `ranges`, `decided_utc`, `source` (`label-studio` or CLI). |
 | `ls_tasks/<job_id>.json` | Label Studio task id created for the bag. |
 | `label_studio.json` | Label Studio connection (URL, token, project id, video prefix). Owner and group readable only. |
+| `mission_db.env` | Mission DB connection for the runners (host, port, user, password, db). Owner and group readable only. |
 | `models/` | PHASEFORMER and anomaly weights, mounted read-only into the containers. |
 | `gpu.lock`, `trigger.lock` | `flock` files: one GPU job at a time, one trigger pass at a time. |
 
@@ -112,23 +113,20 @@ so the next pass redoes it.
 
 ## 3. Installation on a new machine
 
-Prerequisites: Ubuntu with Docker, the NVIDIA container runtime, `pyenv`, `sudo`
-for the first user, and the stage images available (registry access once, or loaded
-from a tarball).
+Prerequisites: Ubuntu with Docker, `sudo` for the operator account, and the
+`subdron_missions_database` repository checked out next to this one.
 
-1. Clone the repository and run, as each user who will operate the pipeline:
+1. Run the host setup once, as the operator account:
    ```bash
-   ./scripts/setup_local_orchestrator.sh
+   ../subdron_missions_database/setup_host.sh
    ```
-   The script creates `/srv/subdron/data` (group `subdron`, setgid, default ACLs so
-   new files stay group-writable), adds the user to `subdron`, `docker` and
-   `systemd-journal`, builds the `pipelines` pyenv virtualenv with `subdron-utils`
-   pinned to a release tag, starts or adopts the tracking DB (`docker compose`,
-   port 5433 unless `MISSION_DB_PORT` is set or a DB container is already running on
-   another port, in which case the port is written to `~/.bashrc`), and on the first
-   run per machine
-   installs the systemd units with the user, repository path and interpreter filled in.
-2. Pull the pinned stage images:
+   It installs the system extras (NVIDIA container toolkit, `jq`, `acl`, `python3-venv`),
+   starts Postgres, MLflow, Metabase and Label Studio, creates `/srv/subdron/data`
+   (group `subdron`, setgid, default ACLs so new files stay group-writable), builds this
+   repository's `.venv` with `subdron-utils` pinned to a release tag, stores the mission-DB
+   connection in `_state/mission_db.env`, and installs the systemd units (trigger timer +
+   dashboard) running as that account from this checkout. It is idempotent.
+2. Pull the pinned stage images (needs the machine's service account active in gcloud):
    ```bash
    ./scripts/update_local_images.sh
    ```
@@ -145,7 +143,7 @@ from a tarball).
    done
    ```
    The anomaly API image is pulled by step 2 and the service started by it (and by the
-   setup script once the image exists); it restarts with Docker from then on.
+   host setup once the image exists); it restarts with Docker from then on.
 5. Connect Label Studio (next section).
 
 ### Label Studio setup (once per machine)
@@ -182,17 +180,18 @@ from a tarball).
 | Variable / file | Default | Meaning |
 | :--- | :--- | :--- |
 | `DATA_ROOT` | `/srv/subdron/data` | Shared data root. |
-| `MISSION_DB_PORT` | `5433` | Host port of the tracking DB. Set in the trigger unit and `~/.bashrc` by the setup script when non-default. |
+| `DB_POSTGRES_HOST/PORT/USER/PASSWORD/DB` | `host.docker.internal:5432`, `mission_admin`, `mission_data` | Mission DB connection. Read from `DATA_ROOT/_state/mission_db.env` (written by the host setup); environment variables override. |
 | `PIPELINE_DASHBOARD_PORT` | `8090` | Dashboard port. |
 | `ANOMALY_API_URL` | `http://localhost:8095` | Where the trigger, runner and dashboard look for the anomaly API. |
 | `ANOMALY_API_PORT` | `8095` | Host port published by the compose service. |
 | `LABEL_STUDIO_TOKEN` | — | Token for `label_studio_sync.py setup`. |
 | `local_orchestrator/images.env` | — | Pinned image versions (`EXTRACTOR_VERSION`, `IMAGE_PROCESSING_VERSION`, `COLMAP_VERSION`, `ANOMALY_API_VERSION`). |
-| Runner flags | `--tag dev`, `--dev-code` | Image tag to run; bind-mount local checkouts for iterating on stage code. The installed trigger unit runs `--dev-code extraction`. |
+| Runner flags | `--tag dev`, `--dev-code` | Image tag to run; bind-mount local checkouts for iterating on stage code (development only; the installed trigger unit runs the pinned image). |
 
-Tracking DB: Postgres `mission_data`, user `subdron`, reached from the containers as
-`host.docker.internal:<MISSION_DB_PORT>`; stages log through the same
-`log_mission_stage` pathway as the cloud services.
+Tracking DB: the `subdron_missions_database` Postgres (`mission_data`, user
+`mission_admin`), reached from the containers as `host.docker.internal:5432`; stages log
+through the same `log_mission_stage` pathway as the cloud services did, into `missions_test`
+(`PIPELINE_ENV=dev`).
 
 ## 5. Monitoring
 
@@ -212,10 +211,10 @@ service and always runs the current code.
 
 ## 6. Multi-user operation
 
-The data root is shared and group-writable by design. The trigger and dashboard are
-system services running as one account regardless of who is logged in; any user in
-`systemd-journal` can read their logs. Onboarding a user is running the setup script
-from their own clone; code is per user, data and services are per machine.
+One operator account owns the machine, the checkouts and the services; the trigger and
+dashboard run as that account regardless of who is logged in. Everyone else only drops
+bags into the shared, group-writable data root and reviews in Label Studio or watches the
+dashboard. A local account that must write to the data root is added to group `subdron`.
 
 ## 7. Design decisions
 

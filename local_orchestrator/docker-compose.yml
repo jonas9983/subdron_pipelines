@@ -1,18 +1,8 @@
+# Pipeline-side services. The mission tracking DB, MLflow, Metabase and Label Studio
+# live in the subdron_missions_database compose project (same host); the runners reach
+# its Postgres at host.docker.internal:5432 with the credentials the setup script
+# stores in DATA_ROOT/_state/mission_db.env.
 services:
-  mission-db:
-    image: postgres:16
-    container_name: subdron-mission-db
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: subdron
-      POSTGRES_PASSWORD: subdron_local
-      POSTGRES_DB: mission_data
-    ports:
-      - "${MISSION_DB_PORT:-5433}:5432"
-    volumes:
-      - mission_db_data:/var/lib/postgresql/data
-      - ./init_db.sql:/docker-entrypoint-initdb.d/init_db.sql:ro
-
   # Always-on anomaly scoring API (CPU). Image: scripts/update_local_images.sh
   anomaly-api:
     image: subdron-anomaly-api:${ANOMALY_API_VERSION:-dev}
@@ -25,6 +15,3 @@ services:
       TRUST_REMOTE_CODE: "1"
     volumes:
       - ${DATA_ROOT:-/srv/subdron/data}/_state/models/anomaly:/models   # <model>/model.xml + model.bin
-
-volumes:
-  mission_db_data:

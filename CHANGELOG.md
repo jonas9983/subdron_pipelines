@@ -3,6 +3,14 @@
 All notable changes to this project will be documented in this file.
 
 
+## [1.4.0] - 2026-09-23
+
+- Local orchestrator logs to the `subdron_missions_database` Postgres on the same host instead of its own `mission-db` container (removed, with `init_db.sql`). Credentials come from `DATA_ROOT/_state/mission_db.env`; `DB_POSTGRES_*` environment variables override. `MISSION_DB_PORT` is gone.
+- `scripts/setup_local_orchestrator.sh` removed: the single host setup is `subdron_missions_database/setup_host.sh` (sibling checkout), which builds this repo's `.venv`, writes the DB connection and installs the systemd units for the operator account. Other users only drop bags into the data root.
+- The installed trigger unit no longer passes `--dev-code extraction` (that needed sibling source checkouts); it runs the pinned extractor image.
+- Label Studio is part of the missions stack compose (the separate `label-studio` fork repository is retired); the review-video mount and `--video-prefix subdron_data` are unchanged.
+
+
 ## [1.3.0] - 2026-09-02
 
 - Anomaly stage: `run_anomaly.py` scores extracted frames (1 fps) through the always-on `anomaly-api` compose service (CPU/OpenVINO); results in `02_Post_Mission/results/anomaly/<ts>/<model>/` (`scores.csv` + original-vs-heatmap images). The trigger runs it right after extraction and skips it with one warning when the API is down; `--reset anomaly` redoes only that stage.

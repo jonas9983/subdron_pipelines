@@ -31,7 +31,7 @@ from pipeline_helpers import fail, resolve_data_root, resolve_under_data_root, u
 try:
     import subdron_utils
 except ImportError:
-    sys.exit("[ERROR] subdron_utils missing — run ./scripts/setup_local_orchestrator.sh first")
+    sys.exit("[ERROR] subdron_utils missing — run ../subdron_missions_database/setup_host.sh first")
 
 
 def main() -> None:

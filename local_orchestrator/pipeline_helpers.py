@@ -21,15 +21,42 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 CONTAINER_DATA = "/data"
 ANOMALY_API_URL = os.getenv("ANOMALY_API_URL", "http://localhost:8095")
 
-DB_ENV = {
-    "ENABLE_DB_LOGGING": "true",
-    "PIPELINE_ENV": "dev",
-    "DB_POSTGRES_HOST": "host.docker.internal",
-    "DB_POSTGRES_PORT": os.getenv("MISSION_DB_PORT", "5433"),
-    "DB_POSTGRES_USER": "subdron",
-    "DB_POSTGRES_PASSWORD": "subdron_local",
-    "DB_POSTGRES_DB": "mission_data",
-}
+DEFAULT_DATA_ROOT = "/srv/subdron/data"
+MISSION_DB_ENV_FILE = "_state/mission_db.env"   # written by subdron_missions_database/setup_host.sh
+
+
+def _mission_db_env() -> dict:
+    """Connection to the mission tracking DB (subdron_missions_database stack on this host).
+
+    Defaults < DATA_ROOT/_state/mission_db.env (KEY=VALUE lines) < environment variables,
+    so a shell export always wins and the systemd units need no secrets of their own.
+    """
+    env = {
+        "ENABLE_DB_LOGGING": "true",
+        "PIPELINE_ENV": "dev",
+        "DB_POSTGRES_HOST": "host.docker.internal",
+        "DB_POSTGRES_PORT": "5432",
+        "DB_POSTGRES_USER": "mission_admin",
+        "DB_POSTGRES_PASSWORD": "",
+        "DB_POSTGRES_DB": "mission_data",
+    }
+    env_file = Path(os.getenv("DATA_ROOT") or DEFAULT_DATA_ROOT) / MISSION_DB_ENV_FILE
+    try:
+        for line in env_file.read_text().splitlines():
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                k, v = line.split("=", 1)
+                if k.strip() in env:
+                    env[k.strip()] = v.strip().strip("'\"")
+    except OSError:
+        pass
+    for k in env:
+        if os.getenv(k):
+            env[k] = os.environ[k]
+    return env
+
+
+DB_ENV = _mission_db_env()
 
 
 def anomaly_api_health(api_url: str = ANOMALY_API_URL, timeout: float = 3.0) -> dict | None:
@@ -51,14 +78,11 @@ def utc_now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-DEFAULT_DATA_ROOT = "/srv/subdron/data"
-
-
 def resolve_data_root(cli_value: str | None) -> Path:
     candidate = cli_value or os.getenv("DATA_ROOT") or DEFAULT_DATA_ROOT
     root = Path(candidate).resolve()
     if not root.is_dir():
-        fail(f"DATA_ROOT is not a directory: {root} — run ./scripts/setup_local_orchestrator.sh")
+        fail(f"DATA_ROOT is not a directory: {root} — run ../subdron_missions_database/setup_host.sh")
     if not any(root.iterdir()):
         fail(f"DATA_ROOT is empty: {root} (wrong machine layout?)")
     return root

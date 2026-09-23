@@ -65,3 +65,4 @@ __pycache__/
 
 # sibling repo checked out inside the workspace
 subdron_photomosaicking/
+.venv/

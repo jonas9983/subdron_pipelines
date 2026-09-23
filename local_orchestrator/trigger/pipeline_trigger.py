@@ -35,7 +35,7 @@ import label_studio_sync
 try:
     import subdron_utils
 except ImportError:
-    sys.exit("[ERROR] subdron_utils missing — run ./scripts/setup_local_orchestrator.sh first")
+    sys.exit("[ERROR] subdron_utils missing — run ../subdron_missions_database/setup_host.sh first")
 
 RUNNERS_DIR = Path(__file__).resolve().parent.parent / "runners"
 

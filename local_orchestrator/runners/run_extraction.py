@@ -37,7 +37,7 @@ try:
 except ImportError:
     sys.exit(
         "[ERROR] subdron_utils is not installed in this Python environment.\n"
-        "        Run the one-time setup first:  ./scripts/setup_local_orchestrator.sh"
+        "        Run the host setup first:  ../subdron_missions_database/setup_host.sh"
     )
 
 IMAGE_NAME = "subdron-rosbag-extractor"

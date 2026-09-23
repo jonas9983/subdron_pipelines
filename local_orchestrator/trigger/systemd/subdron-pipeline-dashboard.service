@@ -1,7 +1,5 @@
-# Install:
-#   sudo cp local_orchestrator/trigger/systemd/subdron-pipeline-dashboard.service /etc/systemd/system/
-#   sudo systemctl daemon-reload
-#   sudo systemctl enable --now subdron-pipeline-dashboard
+# Installed by subdron_missions_database/setup_host.sh, which fills in User,
+# WorkingDirectory and the interpreter for the machine.
 # Open:  http://<machine>:8090
 [Unit]
 Description=Subdron pipeline status dashboard
