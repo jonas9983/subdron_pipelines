@@ -56,3 +56,12 @@ image-processing
 *.jpg
 holoocean
 sparus
+
+# Local orchestrator: machine-local data tree, state, and environments
+data/
+.venv/
+.python-version
+__pycache__/
+
+# sibling repo checked out inside the workspace
+subdron_photomosaicking/

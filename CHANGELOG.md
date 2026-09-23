@@ -3,6 +3,29 @@
 All notable changes to this project will be documented in this file.
 
 
+## [1.3.0] - 2026-09-02
+
+- Anomaly stage: `run_anomaly.py` scores extracted frames (1 fps) through the always-on `anomaly-api` compose service (CPU/OpenVINO); results in `02_Post_Mission/results/anomaly/<ts>/<model>/` (`scores.csv` + original-vs-heatmap images). The trigger runs it right after extraction and skips it with one warning when the API is down; `--reset anomaly` redoes only that stage.
+- Anomaly image pulled by `update_local_images.sh`; the service is started by it and by the setup script.
+- PHASEFORMER runner verifies every expected output; images skipped by OOM batches are resumed with a halved batch size, and the job fails if any remain missing.
+- Label Studio ranges converted from 1-based frames to 0-based image indices (the first image of each range was skipped).
+- Dashboard: ANOMALY column; running cells show the progress line and flag errors in the log.
+- Containers keep the caller's supplementary groups (`--group-add`), so users can process each other's mission folders.
+- Job ids use single underscores (`__` records from earlier versions need a reset).
+- README reduced to overview + troubleshooting; full description in `release.md`.
+
+
+## [1.2.0] - 2026-08-05
+
+- Local orchestrator (`local_orchestrator/`): fully offline mission processing mirroring the cloud stages.
+- One runner CLI per stage (extraction, PHASEFORMER, COLMAP): input/mount validation, JSON job records in `DATA_ROOT/_state/jobs/`, full logs in `_state/logs/`, shared GPU lock.
+- `pipeline_trigger.py`: level-triggered pass (new bag -> extraction; approved -> PHASEFORMER per range; enhanced -> COLMAP); failed jobs reported, never auto-retried; `--reset <stage> <bag>` redoes a bag from any stage.
+- Review gate via Label Studio (`label_studio_sync.py`, one task per bag, Approve/Reject + frame ranges) with `approve_bag_for_processing.py` as CLI fallback; systemd service + timer run the trigger every minute.
+- Status dashboard on port 8090 (per-bag stage cells, progress, log links, GPU badge); local mission-tracking Postgres via docker-compose.
+- Shared data root `/srv/subdron/data`; `setup_local_orchestrator.sh` per-user setup; stage image versions pinned in `images.env`; PHASEFORMER weights hosted at `_state/models/` (no cloud credentials at runtime).
+- Removed `run_offline_pipeline.sh` and `test_local_pipeline.sh` (superseded).
+
+
 ## [1.1.2] - 2026-08-03
 
 ### Changed

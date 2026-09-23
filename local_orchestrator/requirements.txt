@@ -1,0 +1,3 @@
+# subdron-utils pinned to a release tag (v1.5.2-dev = a29de000f665091154c5ea1aff94f4773a36f530).
+subdron-utils @ git+ssh://git@bitbucket.org/subdron/subdron-utils.git@v1.5.2-dev
+opencv-python-headless
